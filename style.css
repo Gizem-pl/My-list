@@ -643,3 +643,18 @@ h1 {
 @media (min-width: 520px) {
 
 }
+
+/* Amount picker */
+.qty-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.qty-option {
+  height: 54px;
+  border: none;
+  border-radius: 14px;
+  background: hsl(var(--h, 220) calc(var(--s, 12%) * var(--tile-sat)) var(--tile-l));
+  font-size: 18px;
+  font-weight: 700;
+  touch-action: manipulation;
+  transition: transform 0.12s ease;
+}
+.qty-option:active { transform: scale(0.95); }
+.qty-option.selected { box-shadow: inset 0 0 0 3px var(--accent); }

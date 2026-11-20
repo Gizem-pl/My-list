@@ -736,6 +736,10 @@
       ]));
     }
     var body = el('div', { class: 'sheet-body' });
+    // skip empty parts (e.g. buttons that only show in some cases)
+    body.append = function () {
+      Element.prototype.append.apply(body, Array.prototype.filter.call(arguments, function (x) { return x != null && x !== false; }));
+    };
     sheet.append(body);
     sheet.body = body;
     document.body.append(sheet);
@@ -868,29 +872,44 @@
       if (e.key === 'Enter') { e.preventDefault(); addTyped(); }
     });
 
+    // Tapping an item asks for the amount first (unless you already typed one).
     function pickTile(it, qty, extra) {
       var on = findOnList(it.name);
+      var active = on && !on.inCart ? on : null;
       var b = el('button', {
-        type: 'button', class: 'pick' + (on && !on.inCart ? ' on' : ''), style: tint(catInfo(it.category)),
-        'aria-pressed': on && !on.inCart ? 'true' : 'false', 'aria-label': it.name
+        type: 'button', class: 'pick' + (active ? ' on' : ''), style: tint(catInfo(it.category)),
+        'aria-pressed': active ? 'true' : 'false', 'aria-label': it.name + (active && active.qty ? ', ' + active.qty : '')
       }, [
         el('span', { class: 'pick-check', 'aria-hidden': 'true', text: '✓' }),
         el('span', { class: 'pick-name', text: it.name }),
         el('span', { class: 'pick-emoji', 'aria-hidden': 'true', text: it.icon }),
-        extra ? el('span', { class: 'pick-count', text: extra }) : null
+        extra || (active && active.qty) ? el('span', { class: 'pick-count', text: extra || active.qty }) : null
       ]);
       b.addEventListener('click', function () {
         var cur = findOnList(it.name);
-        if (cur && !cur.inCart) {
-          removeItems([cur.id], 'Removed ' + cur.name);
-          b.classList.remove('on');
-          b.setAttribute('aria-pressed', 'false');
-        } else {
-          addItem({ name: it.name, qty: qty || '', category: it.category, manual: true });
-          b.classList.add('on');
-          b.setAttribute('aria-pressed', 'true');
+        var curActive = cur && !cur.inCart ? cur : null;
+        function after() {
+          if (b.isConnected) b.replaceWith(pickTile(it, qty, extra));
+          if (typing) { input.value = ''; update(); }
         }
-        if (typing) { input.value = ''; update(); input.focus(); }
+        if (qty && !curActive) {
+          addItem({ name: it.name, qty: qty, category: it.category, manual: true });
+          after();
+          return;
+        }
+        openQtyPicker(it, curActive, function (choice) {
+          if (choice === null) {
+            removeItems([curActive.id], 'Removed ' + curActive.name);
+          } else if (curActive) {
+            curActive.qty = choice;
+            save();
+            renderMain();
+            toast(choice ? it.name + ': ' + choice : 'Amount removed');
+          } else {
+            addItem({ name: it.name, qty: choice, category: it.category, manual: true });
+          }
+          after();
+        });
       });
       return b;
     }
@@ -947,6 +966,58 @@
 
     update();
     input.focus();
+  }
+
+  // ---------- Amount picker ----------
+  var QTY_PRESETS = {
+    'Meat': ['250g', '500g', '750g', '1kg', '1x', '2x'],
+    'Fish': ['200g', '300g', '500g', '1kg', '1x', '2x'],
+    'Dairy': ['1x', '2x', '3x', '4x', '200g', '500g'],
+    'Eggs': ['6x', '10x', '12x', '15x', '20x', '30x'],
+    'Veggies': ['1x', '2x', '3x', '500g', '1kg', '1 bunch'],
+    'Fruits': ['1x', '2x', '4x', '6x', '500g', '1kg'],
+    'Pantry': ['1x', '2x', '3x', '250g', '500g', '1kg'],
+    'Drinks': ['1x', '2x', '6x', '1l', '1.5l', '2l']
+  };
+  var DEFAULT_PRESETS = ['1x', '2x', '3x', '4x', '5x', '6x'];
+
+  // done(amount) — '' means no amount, null means remove from the list
+  function openQtyPicker(it, active, done) {
+    var ci = catInfo(it.category);
+    var sheet = openSheet({ title: it.name + ' ' + it.icon });
+    var finished = false;
+    function finish(v) {
+      if (finished) return;
+      finished = true;
+      if (v) {
+        var m = v.match(ONLY_QTY);
+        v = m ? fmtQty(m[1], m[2]) : v.slice(0, 20);
+      }
+      closeSheet(sheet);
+      done(v);
+    }
+    var custom = el('input', {
+      class: 'input', type: 'text', placeholder: 'Other amount, e.g. 750g', 'aria-label': 'Other amount',
+      value: active && active.qty ? active.qty : '', maxlength: '20', enterkeyhint: 'done', inputmode: 'text'
+    });
+    custom.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); finish(custom.value.trim()); } });
+
+    sheet.body.append(
+      el('p', { class: 'hint', text: active ? 'Already on your list. Change the amount:' : 'How much?' }),
+      el('div', { class: 'qty-grid' }, (QTY_PRESETS[it.category] || DEFAULT_PRESETS).map(function (q) {
+        return el('button', {
+          type: 'button', class: 'qty-option' + (active && active.qty === q ? ' selected' : ''), style: tint(ci), text: q,
+          onclick: function () { finish(q); }
+        });
+      })),
+      label('Other amount'),
+      el('div', { class: 'inline-form' }, [
+        custom,
+        el('button', { type: 'button', class: 'primary-btn', text: active ? 'Update' : 'Add', onclick: function () { finish(custom.value.trim()); } })
+      ]),
+      el('button', { type: 'button', class: 'secondary-btn wide', text: active ? 'No amount' : 'Add without amount', onclick: function () { finish(''); } }),
+      active ? el('button', { type: 'button', class: 'danger-btn', text: 'Remove from list', onclick: function () { finish(null); } }) : null
+    );
   }
 
   // ---------- Category picker ----------
