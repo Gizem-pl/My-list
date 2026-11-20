@@ -114,7 +114,11 @@
     if (!qty && (m = t.match(TRAIL_X))) { qty = m[2] + 'x'; t = m[1].trim(); }
     return { qty: qty, name: t };
   }
-  var parseQty = splitQty;
+  // The add box: a pasted "• milk 2x" loses its bullet (a leading number stays, it's the amount).
+  function parseQty(text) {
+    var t = String(text || '');
+    return splitQty(/^\s*\d/.test(t) ? t : t.replace(BULLET_RE, ''));
+  }
 
   // ================= Reading one ingredient line =================
   var PREP_WORDS = ('finely roughly thinly freshly coarsely very chopped diced sliced grated shredded crushed peeled deseeded seeded ' +
@@ -124,16 +128,22 @@
   var NOTE_RE = /\s*\b(to taste|as needed|as required|if needed|for serving|to serve|for garnish|to garnish|for decoration|for topping|for frying|for greasing|for brushing|for dusting|optional|plus extra|plus more|or more|divided|at room temperature|room temperature|or to taste|according to taste|do smaku|opcjonalnie|do podania|do dekoracji|do smażenia)\b.*$/i;
   var WATER_RE = /^((cold|hot|warm|boiling|ice|iced|lukewarm|tap|filtered)\s+)?water$|^((zimna|ciepła|gorąca|wrząca|przegotowana)\s+)?woda$/i;
 
+  // List markers copied along with the text: symbols, checkboxes, "1." and the
+  // word "bullet" that some sites and apps paste in place of the dot.
+  var BULLET_RE = /^\s*(?:(?:bullet(?:\s*point)?s?(?=[\s:.]|$)[\s:.]*)|[-–—‐‑‒―•‣⁃∙⦁·*+~>»›▪▫■□◦○●◉◎◆◇❖►▸▶▹▷➤➢➔→⇒✓✔✗✘☐☑☒▢❏❑❒✦✧♦◘◙ ‣]+\s*|\[[ xX]?\]\s*|\d+[.)]\s+)+/i;
+
   function cleanLine(l) {
     return String(l || '')
-      .replace(/^\s*(?:[-–—•*·▪◦▢□☐☑✓✔○●]+\s*|\[[ xX]?\]\s*|\d+[.)]\s+)/, '')
+      .replace(BULLET_RE, '')
       .replace(/^#+\s*/, '').replace(/\*\*|__/g, '').replace(/\s+/g, ' ').trim();
   }
 
   function stripPrep(name) {
     var words = name.split(' ');
     while (words.length > 1) {
-      if (aliasMap[norm(words.join(' '))]) break; // "chopped tomatoes", "smoked salmon" are products
+      var whole = aliasMap[norm(words.join(' '))];
+      // "chopped tomatoes", "smoked salmon" are products of their own; "large eggs" are just eggs
+      if (whole && whole !== aliasMap[norm(words.slice(1).join(' '))]) break;
       var w = words[0].toLowerCase().replace(/[,.]$/, '');
       if (w === 'a' || w === 'an' || w === 'of') { words.shift(); continue; }
       if (w === 'minced' && /^(beef|pork|turkey|chicken|lamb|meat)/i.test(words[1])) break;
@@ -312,8 +322,10 @@
   }
 
   function parseRecipeText(text) {
-    var lines = String(text).replace(/\r/g, '').split('\n').map(function (l) {
-      return l.replace(/[\t ]/g, ' ').trim();
+    var lines = String(text).replace(/\r\n?|[\u2028\u2029]/g, '\n').split('\n').map(function (l) {
+      return l.replace(/[\t\u00A0\u2007\u202F\u200B\uFEFF]/g, ' ').trim();
+    }).filter(function (l) {
+      return !l || cleanLine(l); // a bullet on its own line ("•" then the ingredient below) is dropped
     });
     if (lines.some(isIngHeader)) return sectionMode(lines);
     return simpleMode(lines) || looseMode(lines);
