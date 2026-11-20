@@ -1,10 +1,18 @@
 # Grocery List
 
-A grocery shopping app made with plain HTML, CSS and JavaScript. Items are saved on your device (in the browser's local storage), so they're still there after you close the app.
+A grocery shopping app made with plain HTML, CSS and JavaScript. Everything is saved on your device, and once it's opened from GitHub Pages it works without internet.
+
+## Using it
+
+- **Add items:** tap **＋ Add item**. Pick from the ready-made items, or type your own, like `2x milk` or `chicken 500g`. The app picks the category for you.
+- **Wrong category?** Tap the category on the suggestion, or press and hold an item on your list and pick another. The app remembers your choice next time.
+- **My frequent:** inside **＋ Add item**, the **⭐ My frequent** tab shows what you add most often.
+- **Shopping:** tap an item to put it in **In Cart**. Tap it there to put it back on the list. **Clear Cart** empties the cart, and you can undo it.
+- **Stores:** filter by Biedronka, Carrefour, Rossmann, Hebe or Auchan. Press and hold an item to tag it with a store. Items with "Any store" show up under every store.
+- **Lists:** tap **＋ List** for extra lists, like Travel. Your own categories are under ••• → **My categories**.
+- **Recipes:** tap ••• → **Import a recipe** and paste a recipe (dish name first, then one ingredient per line). It becomes its own list. See [SHARING.md](SHARING.md) for how the cooking apps send recipes.
 
 ## Try it on your computer
-
-Open `index.html` in a browser, or run a tiny local server from this folder:
 
 ```
 python3 -m http.server
@@ -12,25 +20,29 @@ python3 -m http.server
 
 Then visit http://localhost:8000
 
-## Put it on GitHub Pages
+## Publishing an update
 
-1. Create a new repository on GitHub (for example `my-list`).
-2. Upload all the files in this folder to it (or push them with git).
-3. In the repository, go to **Settings → Pages**.
-4. Under **Build and deployment**, pick **Deploy from a branch**, choose `main` and `/ (root)`, then **Save**.
-5. After a minute your app is live at `https://YOUR-USERNAME.github.io/my-list/`.
+```
+git add -A
+git commit -m "describe what you changed"
+git push
+```
+
+When you change any app file, also raise the version in `sw.js` (for example `grocery-v3` to `grocery-v4`). That tells phones to download the new files. The update shows up the second time you open the app.
 
 ## Add it to your iPhone Home Screen
 
 1. Open your GitHub Pages link in **Safari** on your iPhone.
-2. Tap the **Share** button, then **Add to Home Screen**.
-3. Tap **Add**. Open it from the new icon and it runs full-screen, like an app.
+2. Tap **Share**, then **Add to Home Screen**, then **Add**.
+3. Open it once while online. After that it works offline too.
 
-**Note:** On iPhone, the Home Screen app keeps its own saved items, separate from Safari. Add your items from inside the Home Screen app.
+**Note:** On iPhone, the Home Screen app keeps its own saved items, separate from Safari.
 
 ## Files
 
 - `index.html`: the page
 - `style.css`: the look
-- `app.js`: adding, deleting and saving items
+- `catalog.js`: categories and the ready-made items
+- `app.js`: everything the app does
+- `sw.js`: offline support
 - `manifest.json`, `icon-*.png`, `icon.svg`: app name and icons for the Home Screen

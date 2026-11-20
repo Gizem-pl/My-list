@@ -4,13 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Grocery List</title>
+  <meta name="description" content="A simple grocery list that works offline.">
 
   <!-- Full-screen Home Screen app on iPhone -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Grocery List">
-  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-title" content="Groceries">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 
   <link rel="apple-touch-icon" href="icon-180.png">
@@ -19,48 +20,41 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="app">
-    <header>
+  <div class="app">
+    <header class="title-row">
       <h1>Grocery List</h1>
+      <button id="menu-btn" class="round-btn" type="button" aria-label="More options">•••</button>
     </header>
 
-    <nav id="tabs" class="tabs" aria-label="Filter by store"></nav>
+    <div class="sticky">
+      <nav id="lists" class="chips" aria-label="Your lists"></nav>
+      <nav id="stores" class="chips" aria-label="Filter by store"></nav>
+    </div>
 
-    <form id="add-form" class="add-form" autocomplete="off">
-      <input id="name" type="text" placeholder="Item, e.g. Milk" aria-label="Item name" maxlength="100" enterkeyhint="done">
-      <div class="row">
-        <input id="qty" type="text" placeholder="Qty (2x, 500g)" aria-label="Quantity (optional)" maxlength="20" enterkeyhint="done">
-        <select id="category" aria-label="Category"></select>
-      </div>
-      <div class="row">
-        <select id="store" aria-label="Store"></select>
-        <button type="submit" class="add-btn">Add</button>
-      </div>
-    </form>
+    <div id="inbox" class="banner" hidden></div>
 
-    <section id="active"></section>
-    <p id="empty" class="empty">Nothing to buy here. Add an item above.</p>
+    <main id="content"></main>
 
-    <section id="cart-section" class="cart-section">
-      <div class="cart-header">
+    <section id="cart" class="cart" hidden>
+      <div class="cart-head">
         <h2>In Cart <span id="cart-count" class="count"></span></h2>
-        <button id="clear-cart" type="button" class="clear-btn">Clear Cart</button>
+        <button id="clear-cart" type="button" class="pill-btn danger">Clear Cart</button>
       </div>
       <p class="hint">Tap an item to put it back on the list.</p>
-      <ul id="cart" class="list"></ul>
+      <div id="cart-grid" class="grid"></div>
     </section>
 
-    <details id="custom" class="custom">
-      <summary>My categories</summary>
-      <p class="hint">Make your own, like “Travel” for passport, charger, iPad. Pick “+ New category…” in the category menu, or add one here.</p>
-      <form id="cat-form" class="cat-form" autocomplete="off">
-        <input id="cat-name" type="text" placeholder="New category name" aria-label="New category name" maxlength="30">
-        <button type="submit">Add</button>
-      </form>
-      <ul id="cat-list" class="cat-list"></ul>
-    </details>
-  </main>
+    <p id="tip" class="hint tip" hidden>Tip: press and hold an item to change its amount, category or store.</p>
+  </div>
 
+  <div class="add-bar">
+    <button id="add-btn" type="button" class="add-pill"><span class="plus">＋</span> Add item</button>
+  </div>
+
+  <div id="backdrop" class="backdrop"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="catalog.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
