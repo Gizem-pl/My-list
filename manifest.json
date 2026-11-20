@@ -1,6 +1,6 @@
 {
-  "name": "My List",
-  "short_name": "My List",
+  "name": "Grocery List",
+  "short_name": "Groceries",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

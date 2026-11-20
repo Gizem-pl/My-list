@@ -1,6 +1,6 @@
-# My List
+# Grocery List
 
-A simple list app made with plain HTML, CSS and JavaScript. Items are saved on your device (in the browser's local storage), so they're still there after you close the app.
+A grocery shopping app made with plain HTML, CSS and JavaScript. Items are saved on your device (in the browser's local storage), so they're still there after you close the app.
 
 ## Try it on your computer
 
