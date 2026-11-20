@@ -59,22 +59,264 @@
       .split(' ').filter(Boolean).map(stem).join(' ');
   }
 
-  // Quantity like "2x milk", "milk 2x", "500g chicken", "Salmon - 300 g", "2 tbsp soy sauce"
-  var NUM = '(?:\\d+(?:[.,/]\\d+)?|[½¼¾⅓⅔])';
-  var UNIT = '(?:x|×|pcs?|szt\\.?|kg|g|gr|mg|l|ml|cl|dl|oz|lbs?|tbsp|tsp|cups?|cloves?|cans?|tins?|packs?|packets?|bunch(?:es)?|slices?|pieces?|bottles?|bags?|jars?|handfuls?)';
-  var QTY = '(?:' + NUM + '\\s*' + UNIT + '?\\.?|[x×]\\s*\\d+)';
-  var LEAD = new RegExp('^(' + QTY + ')\\s+(?:of\\s+)?(.+)$', 'i');
-  var PAREN = new RegExp('^(.+?)\\s*\\((' + QTY + ')\\)$', 'i');
-  var TRAIL = new RegExp('^(.+?)\\s*[-–—:,]?\\s+(' + QTY + ')$', 'i');
+  // ================= Quantities =================
+  // Understands "2x milk", "milk 2x", "500 g chicken", "Salmon - 300g", "1 1/2 cups flour",
+  // "2–3 cloves garlic", "1 can (400 ml) coconut milk", "a pinch of salt", "2 łyżki oliwy"…
+  var FRAC = '½¼¾⅓⅔⅛';
+  var NUM_RE = '(?:\\d+\\s+\\d+\\/\\d+|\\d+\\/\\d+|\\d+(?:[.,]\\d+)?\\s?[' + FRAC + ']?|[' + FRAC + '])';
+  var RANGE_RE = NUM_RE + '(?:\\s*(?:-|–|—|to|or|do)\\s*' + NUM_RE + ')?';
+  var UNIT_CANON = {
+    tbsp: 'tablespoons tablespoon tbsps tbsp tbs tbl łyżki łyżka łyżek lyzki lyzka lyzek',
+    tsp: 'teaspoons teaspoon tsps tsp łyżeczki łyżeczka łyżeczek lyzeczki lyzeczka lyzeczek',
+    kg: 'kilograms kilogram kilos kilo kg',
+    g: 'grams gram gr g',
+    dag: 'dag dkg',
+    ml: 'milliliters millilitres milliliter millilitre ml',
+    l: 'liters litres liter litre l',
+    oz: 'ounces ounce oz',
+    lb: 'pounds pound lbs lb',
+    x: 'x ×',
+    pcs: 'pieces piece pcs pc szt sztuki sztuka sztuk'
+  };
+  var OTHER_UNITS = 'cups cup pinches pinch dashes dash cloves clove cans can tins tin jars jar packs pack packets packet packages package bunches bunch handfuls handful slices slice stalks stalk sprigs sprig heads head sticks stick sheets sheet bottles bottle bags bag boxes box knobs knob drops drop szklanki szklanka szklanek szczypta szczypty ząbki ząbek ząbków puszka puszki puszek opakowanie opakowania garść garści pęczek pęczki plaster plastry plasterki kostka kostki';
+  var unitMap = {};
+  Object.keys(UNIT_CANON).forEach(function (c) { UNIT_CANON[c].split(' ').forEach(function (u) { unitMap[u] = c; }); });
+  OTHER_UNITS.split(' ').forEach(function (u) { unitMap[u] = u; });
+  var UNIT_RE = '(?:' + Object.keys(unitMap).sort(function (a, b) { return b.length - a.length; }).join('|') + ')\\.?(?![\\p{L}])';
+  var LEAD = new RegExp('^(' + RANGE_RE + ')(?:\\s*(' + UNIT_RE + '))?(?:\\s*\\(([^)]*\\d[^)]*)\\))?\\s+(?:of\\s+)?(.+)$', 'iu');
+  var LEAD_A = new RegExp('^(?:a|an|one)\\s+(' + UNIT_RE + ')\\s+(?:of\\s+)?(.+)$', 'iu');
+  var LEAD_UNIT = new RegExp('^(' + UNIT_RE + ')\\s+(?:of\\s+)?(.+)$', 'iu');
+  var UNIT_OF = new RegExp('^(' + UNIT_RE + ')\\s+of\\s+(.+)$', 'iu');
+  var TRAIL = new RegExp('^(.+?)(?:\\s*[-–—:,]\\s*|\\s+)\\(?(' + RANGE_RE + ')(?:\\s*(' + UNIT_RE + '))?\\)?$', 'iu');
+  var TRAIL_X = /^(.+?)\s+[x×]\s*(\d+)$/i;
+  var ONLY_QTY = new RegExp('^(' + RANGE_RE + ')(?:\\s*(' + UNIT_RE + '))?$', 'iu');
+  var SLASH_ALT = new RegExp('^(' + NUM_RE + '\\s*' + UNIT_RE + ')\\s*\\/\\s*' + NUM_RE + '\\s*' + UNIT_RE, 'iu');
+  var METRIC = { g: 1, kg: 1, ml: 1, l: 1, dag: 1, x: 1 };
 
-  function tidyQty(q) { return q.trim().replace(/^(\d+)\s+([x×])$/i, '$1x').replace(/^[x×]\s*(\d+)$/i, '$1x').replace(/×/g, 'x'); }
-  function parseQty(text) {
+  function canonUnit(u) { u = u.toLowerCase().replace(/\.$/, ''); return unitMap[u] || u; }
+  function fmtQty(num, unit, paren) {
+    var q = String(num).replace(/\s*(?:-|–|—|\bto\b|\bor\b|\bdo\b)\s*/i, '–').replace(/(\d)\s+([½¼¾⅓⅔⅛])/, '$1$2').trim();
+    if (unit) { var u = canonUnit(unit); q += (METRIC[u] ? '' : ' ') + u; }
+    if (paren) q += ' (' + paren.trim() + ')';
+    return q;
+  }
+  function splitQty(text) {
     var t = String(text || '').trim().replace(/\s+/g, ' ');
-    var m;
-    if ((m = t.match(LEAD))) return { qty: tidyQty(m[1]), name: m[2].trim() };
-    if ((m = t.match(PAREN))) return { qty: tidyQty(m[2]), name: m[1].trim() };
-    if ((m = t.match(TRAIL))) return { qty: tidyQty(m[2]), name: m[1].trim() };
-    return { qty: '', name: t };
+    var qty = '', m, guard = 0;
+    while (guard++ < 3) {
+      if ((m = t.match(LEAD))) { qty = (qty ? qty + ' ' : '') + fmtQty(m[1], m[2], m[3]); t = m[4].trim(); continue; }
+      if (!qty && (m = t.match(LEAD_A))) { qty = fmtQty('1', m[1]); t = m[2].trim(); continue; }
+      break;
+    }
+    if (qty && (m = t.match(LEAD_UNIT))) { qty += ' ' + canonUnit(m[1]); t = m[2].trim(); } // "2x 400g cans tomatoes"
+    if (!qty && (m = t.match(UNIT_OF))) { qty = '1 ' + canonUnit(m[1]); t = m[2].trim(); }    // "Pinch of salt"
+    if (!qty && (m = t.match(TRAIL))) { qty = fmtQty(m[2], m[3]); t = m[1].trim(); }
+    if (!qty && (m = t.match(TRAIL_X))) { qty = m[2] + 'x'; t = m[1].trim(); }
+    return { qty: qty, name: t };
+  }
+  var parseQty = splitQty;
+
+  // ================= Reading one ingredient line =================
+  var PREP_WORDS = ('finely roughly thinly freshly coarsely very chopped diced sliced grated shredded crushed peeled deseeded seeded ' +
+    'pitted halved quartered softened melted beaten cooked uncooked raw fresh boneless skinless ripe large medium small big ' +
+    'extra-large heaped heaping level rounded generous good quality good-quality organic about approx approximately around ' +
+    'chilled cold trimmed washed drained rinsed torn picked').split(' ');
+  var NOTE_RE = /\s*\b(to taste|as needed|as required|if needed|for serving|to serve|for garnish|to garnish|for decoration|for topping|for frying|for greasing|for brushing|for dusting|optional|plus extra|plus more|or more|divided|at room temperature|room temperature|or to taste|according to taste|do smaku|opcjonalnie|do podania|do dekoracji|do smażenia)\b.*$/i;
+  var WATER_RE = /^((cold|hot|warm|boiling|ice|iced|lukewarm|tap|filtered)\s+)?water$|^((zimna|ciepła|gorąca|wrząca|przegotowana)\s+)?woda$/i;
+
+  function cleanLine(l) {
+    return String(l || '')
+      .replace(/^\s*(?:[-–—•*·▪◦▢□☐☑✓✔○●]+\s*|\[[ xX]?\]\s*|\d+[.)]\s+)/, '')
+      .replace(/^#+\s*/, '').replace(/\*\*|__/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function stripPrep(name) {
+    var words = name.split(' ');
+    while (words.length > 1) {
+      if (aliasMap[norm(words.join(' '))]) break; // "chopped tomatoes", "smoked salmon" are products
+      var w = words[0].toLowerCase().replace(/[,.]$/, '');
+      if (w === 'a' || w === 'an' || w === 'of') { words.shift(); continue; }
+      if (w === 'minced' && /^(beef|pork|turkey|chicken|lamb|meat)/i.test(words[1])) break;
+      if (w === 'minced' || PREP_WORDS.indexOf(w) !== -1) { words.shift(); continue; }
+      break;
+    }
+    while (words.length > 1) {
+      var last = words[words.length - 1].toLowerCase();
+      if (last === 'minced' || PREP_WORDS.indexOf(last) !== -1) words.pop(); else break;
+    }
+    return words.join(' ');
+  }
+
+  // "2 garlic cloves, finely chopped" → [{ name: "Garlic cloves", qty: "2" }]
+  function parseIngredient(raw) {
+    var t = cleanLine(raw).replace(SLASH_ALT, '$1');
+    if (!t) return [];
+    var jm = t.match(/^(?:the\s+)?(?:juice|zest|juice and zest|zest and juice)\s+(?:of\s+)?(\d+|a|an|one|half|½)\s+(.+)$/i);
+    if (jm) t = (/^\d+$/.test(jm[1]) ? jm[1] : /half|½/i.test(jm[1]) ? '½' : '1') + ' ' + jm[2];
+    var s = splitQty(t);
+    var qty = s.qty;
+    var name = s.name.replace(/\(([^)]*)\)/g, function (_, inner) {
+      if (!qty && /\d/.test(inner)) qty = inner.trim();
+      return ' ';
+    });
+    var parts = name.split(/\s*[,;]\s*|\s+[-–—]\s+/);
+    // "boneless, skinless chicken thighs": the first part is only a description, keep going
+    while (parts.length > 1 && parts[0].split(' ').every(function (w) { return PREP_WORDS.indexOf(w.toLowerCase()) !== -1; })) {
+      parts[0] = parts[0] + ' ' + parts.splice(1, 1)[0];
+    }
+    name = parts[0];
+    if (!qty && parts[1]) {
+      var pm = parts[1].trim().match(ONLY_QTY);
+      if (pm) qty = fmtQty(pm[1], pm[2]);
+    }
+    name = name.replace(NOTE_RE, '').split(/\s+or\s+/i)[0];
+    name = stripPrep(name.replace(/\s+/g, ' ').trim());
+    name = name.replace(/^[\s.,:;*\-–—]+|[\s.,:;*\-–—]+$/g, '').trim();
+    if (name.length < 2 || WATER_RE.test(name)) return [];
+    if (/^(sea\s+)?salt\s*(and|&|\+)\s*(black\s+)?pepper$|^s[oó]l\s*(i|&)\s*pieprz$/i.test(name)) {
+      return [{ name: 'Salt', qty: '' }, { name: 'Black pepper', qty: '' }];
+    }
+    return [{ name: cap(name).slice(0, 60), qty: qty }];
+  }
+
+  // ================= Reading a whole pasted recipe =================
+  var STEP_WORDS = ('add heat cook stir mix combine place put bake boil bring pour serve preheat season whisk fry saute sauté cut ' +
+    'remove transfer let leave simmer drain rinse wash top garnish sprinkle divide arrange spread roll fold blend marinate ' +
+    'meanwhile repeat enjoy set cover reduce toss return using use once when while then next finally first start make prepare ' +
+    'grill roast steam soak cool chill refrigerate squeeze scatter slice chop dice peel grate mash knead shape line grease spoon ' +
+    'ladle assemble store keep you this these it if we my our your in on into at after before until during wait check taste ' +
+    'adjust allow turn flip continue finish note tip dodaj wymieszaj gotuj smaż pokrój podawaj piecz wlej rozgrzej ugotuj ' +
+    'odcedź posyp przełóż wstaw obierz umyj').split(' ');
+  var META_RE = /^(prep|preparation time|cook|cooking|total|active|ready in|serves|servings?|yield|makes|portions?|porcje|porcji|liczba porcji|calories|kcal|difficulty|course|cuisine|author|rating|ratings|reviews?|print|pin|save|jump to|share|nutrition|czas|kalorie|trudność|keyword|keywords|diet|equipment|published|updated|by)\b|^\d+\s*(min|mins|minutes|minut|hours?|hrs?|h|godz)\b|\b\d+\s*(min|mins|minutes|minut)\.?$|^https?:|www\.|[★☆]|^\d+(\.\d+)?\s*(from|out of|\/)\s*\d+|^\d+\s*(votes|reviews|comments|ratings)/i;
+  var ING_HEAD_RE = /^(ingredients?|ingredient list|składniki|what you('|’)?ll need|what you need|you('|’)?ll need|you will need|shopping list|lista zakupów)\b/i;
+  var END_HEAD_RE = /^(method|instructions?|directions?|steps?|preparation|how to (make|cook|prepare)( it)?|przygotowanie|sposób przygotowania|wykonanie|notes?|recipe notes|tips?|nutrition|nutritional info(rmation)?|serving suggestions?|equipment|video|storage|faq|comments?|related recipes|you may also like)\b/i;
+
+  function wordCount(t) { return String(t).split(/\s+/).filter(Boolean).length; }
+  function headText(t) { return String(t).replace(/^[#*\s]+|[:：*#=_\s]+$/g, '').trim(); }
+  function isIngHeader(t) { var h = headText(cleanLine(t)); return wordCount(h) <= 6 && ING_HEAD_RE.test(h); }
+  function isEndHeader(t) { var h = headText(cleanLine(t)); return wordCount(h) <= 6 && END_HEAD_RE.test(h); }
+  function isSubHeader(t) {
+    if (splitQty(t).qty) return false;
+    if (/:\s*$/.test(t) && wordCount(t) <= 6) return true;
+    return /^(for|do|na)\s+(the\s+)?[\p{L}\s-]+$/iu.test(t) && wordCount(t) <= 5;
+  }
+  function isStepLike(raw, asTitle) {
+    var s = String(raw).replace(/^\s*(?:step\s*\d+\s*[:.)-]?|\d+[.)])\s*/i, '');
+    var numbered = s !== String(raw).trim();
+    var first = (s.toLowerCase().match(/^[\p{L}']+/u) || [''])[0];
+    var wc = wordCount(s);
+    if (STEP_WORDS.indexOf(first) !== -1 && !(asTitle && wc <= 3)) return true; // "Stir fry" can be a dish name
+    if (wc > 12) return true;
+    if (/[.!?]$/.test(s) && wc > 5) return true;
+    if (numbered && wc > 6 && !splitQty(s).qty) return true;
+    return /\b(minutes|until|degrees|°c|°f|oven|frying pan|skillet|saucepan)\b/i.test(s) && wc > 5;
+  }
+  function isTitleLike(t) {
+    var h = headText(cleanLine(t));
+    if (h.length < 2 || wordCount(h) > 10 || /[.!?]$/.test(h)) return false;
+    if (META_RE.test(h) || isIngHeader(h) || isEndHeader(h) || isStepLike(h, true) || splitQty(h).qty) return false;
+    return !/^(recipe|print recipe|jump to recipe|save recipe|pin recipe|home)$/i.test(h);
+  }
+
+  // null = not an ingredient line; [] = an ingredient you don't need to buy (water)
+  function ingredientFrom(line, lenient) {
+    var t = cleanLine(line);
+    if (!t || META_RE.test(t) || isIngHeader(t) || isEndHeader(t) || isSubHeader(t) || isStepLike(t)) return null;
+    var items = parseIngredient(t);
+    if (!items.length) return [];
+    if (lenient) return wordCount(items[0].name) > 8 ? null : items;
+    var known = wordCount(items[0].name) <= 4 && matchEntry(norm(items[0].name));
+    return splitQty(t).qty || known ? items : null;
+  }
+
+  function finishDishes(dishes) {
+    return dishes.map(function (d) {
+      var seen = {}, items = [];
+      d.items.forEach(function (i) {
+        var k = norm(niceName(i.name));
+        if (!k) return;
+        if (seen[k]) {
+          if (i.qty) seen[k].qty = seen[k].qty ? seen[k].qty + ' + ' + i.qty : i.qty;
+          return;
+        }
+        seen[k] = { name: i.name, qty: i.qty || '' };
+        items.push(seen[k]);
+      });
+      return { name: d.name, items: items, from: d.from || '' };
+    }).filter(function (d) { return d.items.length; });
+  }
+
+  // "Salmon Donburi (Japanese Salmon Rice Bowl) | Food Blog" → "Salmon Donburi"
+  function dishTitle(t) {
+    var s = headText(cleanLine(t || 'Recipe')).replace(/\s*[|•–—]\s.*$/, '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return cap(s).slice(0, 60) || 'Recipe';
+  }
+
+  // Recipes with an "Ingredients" heading: only that section is read.
+  function sectionMode(lines) {
+    var dishes = [], cur = null, inSection = false, before = [];
+    lines.forEach(function (l) {
+      if (!l) return;
+      if (isIngHeader(l)) {
+        if (!(inSection && cur)) {
+          var titles = before.filter(isTitleLike);
+          cur = { name: dishTitle(dishes.length ? titles[titles.length - 1] : titles[0]), items: [] };
+          dishes.push(cur);
+        }
+        inSection = true;
+        before = [];
+        return;
+      }
+      if (isEndHeader(l)) { inSection = false; before = []; return; }
+      if (inSection) {
+        var got = ingredientFrom(l, true);
+        if (got) cur.items = cur.items.concat(got);
+      } else {
+        before.push(l);
+      }
+    });
+    return finishDishes(dishes);
+  }
+
+  // Simple lists: dish name, then one ingredient per line (blank line between dishes).
+  function simpleMode(lines) {
+    var blocks = [], b = [];
+    lines.forEach(function (l) { if (l) b.push(l); else if (b.length) { blocks.push(b); b = []; } });
+    if (b.length) blocks.push(b);
+    var dishes = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var bl = blocks[i], start = 0, dish;
+      var titled = bl.length > 1 && isTitleLike(bl[0]) && !(dishes.length && aliasMap[norm(cleanLine(bl[0]))]);
+      if (titled) { dish = { name: dishTitle(bl[0]), items: [] }; dishes.push(dish); start = 1; }
+      else if (dishes.length) dish = dishes[dishes.length - 1];
+      else return null;
+      for (var j = start; j < bl.length; j++) {
+        var got = ingredientFrom(bl[j], true);
+        if (got === null) return null;
+        dish.items = dish.items.concat(got);
+      }
+    }
+    return finishDishes(dishes);
+  }
+
+  // Anything else: keep only lines that clearly are ingredients.
+  function looseMode(lines) {
+    var title = null, items = [];
+    lines.forEach(function (l) {
+      if (!l) return;
+      if (!items.length && !title && isTitleLike(l) && !aliasMap[norm(cleanLine(l))]) { title = l; return; }
+      var got = ingredientFrom(l, false);
+      if (got) items = items.concat(got);
+    });
+    return finishDishes([{ name: dishTitle(title), items: items }]);
+  }
+
+  function parseRecipeText(text) {
+    var lines = String(text).replace(/\r/g, '').split('\n').map(function (l) {
+      return l.replace(/[\t ]/g, ' ').trim();
+    });
+    if (lines.some(isIngHeader)) return sectionMode(lines);
+    return simpleMode(lines) || looseMode(lines);
   }
 
   // ================= Catalog index =================
@@ -177,18 +419,26 @@
   }
   function tint(ci) { return '--h:' + ci.h + ';--s:' + ci.s; }
 
+  // Singular "pepper" in a recipe means black pepper; "peppers" means bell peppers.
+  var RAW_OVERRIDES = { pepper: 'black pepper', pieprz: 'black pepper' };
+  function entryFor(name) {
+    var raw = String(name || '').trim().toLowerCase();
+    if (RAW_OVERRIDES[raw]) return aliasMap[norm(RAW_OVERRIDES[raw])];
+    return matchEntry(norm(name));
+  }
   function detectCategory(name) {
     var k = norm(name);
     if (data.learned[k] && hasCat(data.learned[k])) return data.learned[k];
     var c = data.counts[k];
     if (c && c.category && hasCat(c.category)) return c.category;
-    var e = matchEntry(k);
+    var e = entryFor(name);
     return e ? e.category : 'Other';
   }
   function iconFor(name, category) {
     var k = norm(name);
-    if (aliasMap[k]) return aliasMap[k].icon;
-    var e = matchEntry(k);
+    var raw = String(name || '').trim().toLowerCase();
+    if (aliasMap[k] && !RAW_OVERRIDES[raw]) return aliasMap[k].icon;
+    var e = entryFor(name);
     if (e && e.category === category) return e.icon;
     return catInfo(category).icon;
   }
@@ -387,17 +637,22 @@
     });
   }
 
-  function itemTile(item, list) {
+  // One line on the list: ○ Turkey breast 🦃 ........ 500g
+  function itemRow(item, list) {
     var ci = catInfo(item.category);
     var b = el('button', {
-      type: 'button', class: 'tile' + (item.inCart ? ' done' : ''), style: tint(ci),
+      type: 'button', class: 'row' + (item.inCart ? ' done' : ''), style: tint(ci),
       'aria-label': (item.inCart ? 'Put back: ' : 'Got it: ') + item.name + (item.qty ? ', ' + item.qty : '')
     }, [
-      el('span', { class: 'tile-icon', text: iconFor(item.name, item.category) }),
-      el('span', { class: 'tile-name', text: item.name }),
-      item.qty ? el('span', { class: 'tile-qty', text: item.qty }) : null,
-      item.store && list.type !== 'recipe' ? el('span', { class: 'tile-store', text: item.store }) : null,
-      item.inCart ? el('span', { class: 'tile-check', text: '✓' }) : null
+      el('span', { class: 'check', 'aria-hidden': 'true' }),
+      el('span', { class: 'row-main' }, [
+        el('span', { class: 'row-line' }, [
+          el('span', { class: 'row-name', text: item.name }),
+          el('span', { class: 'row-emoji', 'aria-hidden': 'true', text: iconFor(item.name, item.category) })
+        ]),
+        item.store && list.type !== 'recipe' ? el('span', { class: 'row-store', text: item.store }) : null
+      ]),
+      item.qty ? el('span', { class: 'row-qty', text: item.qty }) : null
     ]);
     bindPress(b, function () { toggleItem(item.id); }, function () { openEdit(item.id); });
     return b;
@@ -417,7 +672,7 @@
       ]));
       if (active.length) {
         active.sort(function (a, b) { return a.addedAt - b.addedAt; });
-        content.append(el('div', { class: 'grid' }, active.map(function (i) { return itemTile(i, list); })));
+        content.append(el('div', { class: 'rows' }, active.map(function (i) { return itemRow(i, list); })));
       }
     } else {
       allCats().forEach(function (c) {
@@ -427,7 +682,7 @@
         if (!group.length) return;
         content.append(el('section', { class: 'group' }, [
           el('h3', { class: 'group-title' }, [c.icon + ' ' + c.name, el('span', { class: 'group-count', text: String(group.length) })]),
-          el('div', { class: 'grid' }, group.map(function (i) { return itemTile(i, list); }))
+          el('div', { class: 'rows' }, group.map(function (i) { return itemRow(i, list); }))
         ]));
       });
     }
@@ -448,7 +703,7 @@
       .sort(function (a, b) { return b.cartAt - a.cartAt; });
     cartSection.hidden = !cart.length;
     cartCount.textContent = cart.length ? String(cart.length) : '';
-    cartGrid.replaceChildren.apply(cartGrid, cart.map(function (i) { return itemTile(i, list); }));
+    cartGrid.replaceChildren.apply(cartGrid, cart.map(function (i) { return itemRow(i, list); }));
   }
 
   function renderMain() {
@@ -574,9 +829,12 @@
       var existing = findOnList(name);
       suggest.replaceChildren(
         el('div', { class: 'suggest-card', style: tint(ci) }, [
-          el('span', { class: 'suggest-icon', text: iconFor(name, cat) }),
           el('div', { class: 'suggest-main' }, [
-            el('div', { class: 'suggest-name' }, [name, p.qty ? el('span', { class: 'qty-pill', text: p.qty }) : null]),
+            el('div', { class: 'suggest-name' }, [
+              name,
+              el('span', { class: 'suggest-icon', 'aria-hidden': 'true', text: iconFor(name, cat) }),
+              p.qty ? el('span', { class: 'qty-pill', text: p.qty }) : null
+            ]),
             el('button', {
               type: 'button', class: 'cat-chip', 'aria-label': 'Category: ' + ci.name + '. Tap to change',
               onclick: function () {
@@ -613,13 +871,13 @@
     function pickTile(it, qty, extra) {
       var on = findOnList(it.name);
       var b = el('button', {
-        type: 'button', class: 'tile small' + (on && !on.inCart ? ' on' : ''), style: tint(catInfo(it.category)),
+        type: 'button', class: 'pick' + (on && !on.inCart ? ' on' : ''), style: tint(catInfo(it.category)),
         'aria-pressed': on && !on.inCart ? 'true' : 'false', 'aria-label': it.name
       }, [
-        el('span', { class: 'tile-icon', text: it.icon }),
-        el('span', { class: 'tile-name', text: it.name }),
-        extra ? el('span', { class: 'tile-qty', text: extra }) : null,
-        el('span', { class: 'tile-check', text: '✓' })
+        el('span', { class: 'pick-check', 'aria-hidden': 'true', text: '✓' }),
+        el('span', { class: 'pick-name', text: it.name }),
+        el('span', { class: 'pick-emoji', 'aria-hidden': 'true', text: it.icon }),
+        extra ? el('span', { class: 'pick-count', text: extra }) : null
       ]);
       b.addEventListener('click', function () {
         var cur = findOnList(it.name);
@@ -646,7 +904,7 @@
       }).slice(0, 30);
       body.replaceChildren();
       if (found.length) {
-        body.append(label('Suggestions'), el('div', { class: 'grid small' }, found.map(function (it) { return pickTile(it, p.qty); })));
+        body.append(label('Suggestions'), el('div', { class: 'picks' }, found.map(function (it) { return pickTile(it, p.qty); })));
       }
     }
 
@@ -668,7 +926,7 @@
           ]));
           return;
         }
-        body.append(label('Most added'), el('div', { class: 'grid small' }, freq.map(function (c) {
+        body.append(label('Most added'), el('div', { class: 'picks' }, freq.map(function (c) {
           var cat = hasCat(c.category) ? c.category : detectCategory(c.name);
           return pickTile({ name: c.name, icon: iconFor(c.name, cat), category: cat }, '', '×' + c.n);
         })));
@@ -682,7 +940,7 @@
         if (!group.length) return;
         body.append(el('section', { class: 'group' }, [
           el('h3', { class: 'group-title' }, [c.icon + ' ' + c.name]),
-          el('div', { class: 'grid small' }, group.map(function (i) { return pickTile(i, ''); }))
+          el('div', { class: 'picks' }, group.map(function (i) { return pickTile(i, ''); }))
         ]));
       });
     }
@@ -916,37 +1174,15 @@
     if (Array.isArray(o.recipes)) return fromJson(o.recipes.map(function (d) { return Object.assign({ from: o.from || o.app }, d); }));
     var raw = o.items || o.ingredients;
     if (!Array.isArray(raw)) return [];
-    var items = raw.map(function (x) {
-      if (typeof x === 'string') return parseQty(x);
+    var items = [];
+    raw.forEach(function (x) {
+      if (typeof x === 'string') { items = items.concat(parseIngredient(x)); return; }
       if (x && typeof x === 'object' && x.name) {
         var qty = x.qty != null ? String(x.qty) : (x.amount != null ? String(x.amount) + (x.unit ? ' ' + x.unit : '') : '');
-        return { name: String(x.name).trim(), qty: qty.trim() };
+        items.push({ name: cap(String(x.name).trim()).slice(0, 60), qty: qty.trim() });
       }
-      return null;
-    }).filter(function (x) { return x && x.name; });
-    if (!items.length) return [];
-    return [{ name: cap(String(o.dish || o.name || o.title || 'Recipe')).slice(0, 60), items: items, from: o.from || o.app || '' }];
-  }
-
-  function cleanLine(l) {
-    return l.replace(/^\s*(?:[-–—•*·▪◦☐☑✓✔]|\[[ xX]?\]|\d+[.)])\s+/, '').replace(/^#+\s*/, '').trim();
-  }
-
-  function fromText(text) {
-    var dishes = [];
-    text.replace(/\r/g, '').split(/\n\s*\n/).forEach(function (block) {
-      var raw = block.split('\n').filter(function (l) { return l.trim(); });
-      var lines = raw.map(cleanLine).filter(function (l) { return l && !/^ingredients?:?$/i.test(l); });
-      if (!lines.length) return;
-      var startsWithTitle = /^\s*#/.test(raw[0]) || lines.length > 1;
-      if (!startsWithTitle && dishes.length) {
-        dishes[dishes.length - 1].items.push(parseQty(lines[0]));
-        return;
-      }
-      var title = startsWithTitle ? lines.shift().replace(/:$/, '') : 'Recipe';
-      dishes.push({ name: cap(title).slice(0, 60), items: lines.map(parseQty).filter(function (x) { return x.name; }), from: '' });
     });
-    return dishes.filter(function (d) { return d.items.length; });
+    return finishDishes([{ name: dishTitle(String(o.dish || o.name || o.title || 'Recipe')), items: items, from: o.from || o.app || '' }]);
   }
 
   function parseImport(text) {
@@ -957,7 +1193,7 @@
     if (/^[[{]/.test(text)) {
       try { return fromJson(JSON.parse(text)); } catch (e) { /* not JSON, read as text */ }
     }
-    return fromText(text);
+    return parseRecipeText(text);
   }
 
   function importDishes(dishes, source) {
@@ -990,18 +1226,38 @@
     var preview = el('div', { class: 'import-preview' });
     var go = el('button', { type: 'button', class: 'primary-btn wide', text: 'Import', disabled: true });
 
+    // Preview: rename the dish or remove any line before importing.
     function show() {
-      preview.replaceChildren.apply(preview, dishes.map(function (d) {
+      preview.replaceChildren.apply(preview, dishes.map(function (d, di) {
+        var title = el('input', { class: 'dish-input', type: 'text', value: d.name, 'aria-label': 'Dish name', maxlength: '60', enterkeyhint: 'done' });
+        title.addEventListener('input', function () { d.name = cap(title.value) || 'Recipe'; });
         return el('div', { class: 'preview-dish' }, [
-          el('h3', { text: '🍽️ ' + d.name }),
-          el('div', { class: 'chip-row' }, d.items.map(function (i) {
+          el('div', { class: 'preview-title' }, [el('span', { 'aria-hidden': 'true', text: '🍽️' }), title]),
+          el('div', { class: 'rows' }, d.items.map(function (i, ii) {
             var n = niceName(i.name);
-            return el('span', { class: 'mini-chip' }, [iconFor(n, detectCategory(n)) + ' ' + n + (i.qty ? ' · ' + i.qty : '')]);
+            return el('div', { class: 'row static', style: tint(catInfo(detectCategory(n))) }, [
+              el('span', { class: 'row-main' }, [el('span', { class: 'row-line' }, [
+                el('span', { class: 'row-name', text: n }),
+                el('span', { class: 'row-emoji', 'aria-hidden': 'true', text: iconFor(n, detectCategory(n)) })
+              ])]),
+              i.qty ? el('span', { class: 'row-qty', text: i.qty }) : null,
+              el('button', {
+                type: 'button', class: 'x-btn', text: '✕', 'aria-label': 'Remove ' + n,
+                onclick: function () {
+                  d.items.splice(ii, 1);
+                  if (!d.items.length) dishes.splice(di, 1);
+                  show();
+                }
+              })
+            ]);
           }))
         ]);
       }));
-      go.disabled = !dishes.length;
-      go.textContent = dishes.length > 1 ? 'Import ' + dishes.length + ' recipes' : 'Import';
+      var total = dishes.reduce(function (a, d) { return a + d.items.length; }, 0);
+      go.disabled = !total;
+      go.textContent = !total ? 'Import' : dishes.length > 1
+        ? 'Import ' + dishes.length + ' recipes'
+        : 'Import ' + total + ' ingredient' + (total === 1 ? '' : 's');
     }
 
     ta.addEventListener('input', function () { dishes = parseImport(ta.value); show(); });
@@ -1030,7 +1286,7 @@
         }
       });
       sheet.body.append(
-        el('p', { class: 'hint', text: 'In a cooking app, copy the recipe, then paste it here. First line is the dish name, then one ingredient per line.' }),
+        el('p', { class: 'hint', text: 'Copy a whole recipe from anywhere and paste it here. Only the ingredients are kept. Check the list, remove anything you don’t need, then import.' }),
         paste, ta, preview, go
       );
     }
@@ -1082,5 +1338,5 @@
   }
 
   // For automated checks only.
-  window.__grocery = { parseQty: parseQty, detectCategory: detectCategory, parseImport: parseImport, niceName: niceName };
+  window.__grocery = { parseQty: parseQty, parseIngredient: parseIngredient, detectCategory: detectCategory, parseImport: parseImport, niceName: niceName };
 })();

@@ -10,7 +10,7 @@ A grocery shopping app made with plain HTML, CSS and JavaScript. Everything is s
 - **Shopping:** tap an item to put it in **In Cart**. Tap it there to put it back on the list. **Clear Cart** empties the cart, and you can undo it.
 - **Stores:** filter by Biedronka, Carrefour, Rossmann, Hebe or Auchan. Press and hold an item to tag it with a store. Items with "Any store" show up under every store.
 - **Lists:** tap **＋ List** for extra lists, like Travel. Your own categories are under ••• → **My categories**.
-- **Recipes:** tap ••• → **Import a recipe** and paste a recipe (dish name first, then one ingredient per line). It becomes its own list. See [SHARING.md](SHARING.md) for how the cooking apps send recipes.
+- **Recipes:** copy a whole recipe from any website or app, then tap ••• → **Import a recipe** → **Paste from clipboard**. Only the ingredients are kept, with clean names and amounts. You can rename the dish or remove lines before importing, and each dish becomes its own list. See [SHARING.md](SHARING.md) for how the cooking apps send recipes.
 
 ## Try it on your computer
 
