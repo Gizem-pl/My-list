@@ -312,6 +312,12 @@ h1 {
 .dish-icon { font-size: 40px; }
 .dish-head h2 { margin: 0; font-size: 22px; line-height: 1.2; overflow-wrap: anywhere; }
 .dish-head p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.dish-head { flex-wrap: wrap; }
+.dish-text { flex: 1; min-width: 0; }
+.dish-send { flex: 0 0 auto; }
+@media (max-width: 420px) { .dish-send { width: 100%; } }
+.pill-btn.accent { color: var(--accent); }
+.ask-text { margin: 4px 2px 6px; font-size: 17px; font-weight: 600; }
 
 /* ---------- Empty ---------- */
 .empty { text-align: center; color: var(--muted); padding: 48px 16px 24px; }

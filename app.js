@@ -126,11 +126,10 @@
     'extra-large heaped heaping level rounded generous good quality good-quality organic about approx approximately around ' +
     'chilled cold trimmed washed drained rinsed torn picked').split(' ');
   var NOTE_RE = /\s*\b(to taste|as needed|as required|if needed|for serving|to serve|for garnish|to garnish|for decoration|for topping|for frying|for greasing|for brushing|for dusting|optional|plus extra|plus more|or more|divided|at room temperature|room temperature|or to taste|according to taste|do smaku|opcjonalnie|do podania|do dekoracji|do smażenia)\b.*$/i;
-  var WATER_RE = /^((cold|hot|warm|boiling|ice|iced|lukewarm|tap|filtered)\s+)?water$|^((zimna|ciepła|gorąca|wrząca|przegotowana)\s+)?woda$/i;
 
   // List markers copied along with the text: symbols, checkboxes, "1." and the
   // word "bullet" that some sites and apps paste in place of the dot.
-  var BULLET_RE = /^\s*(?:(?:bullet(?:\s*point)?s?(?=[\s:.]|$)[\s:.]*)|[-–—‐‑‒―•‣⁃∙⦁·*+~>»›▪▫■□◦○●◉◎◆◇❖►▸▶▹▷➤➢➔→⇒✓✔✗✘☐☑☒▢❏❑❒✦✧♦◘◙ ‣]+\s*|\[[ xX]?\]\s*|\d+[.)]\s+)+/i;
+  var BULLET_RE = /^\s*(?:(?:bullet(?:\s*point)?s?(?=[\s:.]|$)[\s:.]*)|[-–—‐‑‒―•‣⁃∙⦁·*+~>»›▪▫■□◦○●◉◎◆◇❖►▸▶▹▷➤➢➔→⇒✓✔✗✘☐☑☒▢❏❑❒✦✧♦◘◙ ‣]+\s*|\[[ xX]?\]\s*|\d+[.)]\s+|\d+[.)](?=[A-Za-zÀ-ž]))+/i;
 
   function cleanLine(l) {
     return String(l || '')
@@ -157,10 +156,67 @@
     return words.join(' ');
   }
 
+  // Splits "milk, eggs; bread" at commas/semicolons, but not inside brackets
+  // ("1 can (400 ml, drained)") or between digits ("1,5 kg").
+  function splitTopLevel(t) {
+    var out = [], cur = '', depth = 0;
+    for (var i = 0; i < t.length; i++) {
+      var ch = t[i];
+      if (ch === '(' || ch === '[') depth++;
+      else if ((ch === ')' || ch === ']') && depth) depth--;
+      if (!depth && (ch === ';' || (ch === ',' && !(/\d/.test(t[i - 1] || '') && /\d/.test(t[i + 1] || ''))))) {
+        out.push(cur); cur = ''; continue;
+      }
+      cur += ch;
+    }
+    out.push(cur);
+    return out.map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  // After a comma: "finely chopped", "to taste", "drained", "500g" describe the item before it;
+  // "eggs", "2 onions", "za'atar" are items of their own.
+  var NOTE_START = ('to for or and plus about approx approximately around ca roughly at in into cut such see if ' +
+    'with without juice zest only optional divided preferably ideally e.g. eg i.e. ie').split(' ');
+  function isNoteChunk(c) {
+    var t = c.replace(/^\s*(about|approx\.?|approximately|around|ca\.?|roughly)\s+/i, '');
+    if (ONLY_QTY.test(t)) return true;
+    if (splitQty(c).qty) return false;
+    if (aliasMap[norm(c)]) return false;
+    if (/^\s*(\w+\s*)?(to taste|as needed|as required|if needed|for serving|to serve|for garnish|optional|do smaku|opcjonalnie)\b/i.test(c)) return true;
+    var first = c.toLowerCase().split(/\s+/)[0].replace(/[^\p{L}.]/gu, '');
+    if (NOTE_START.indexOf(first) !== -1 || PREP_WORDS.indexOf(first) !== -1 || first === 'minced') return true;
+    return /ly$/.test(first) || (first.length > 4 && /ed$/.test(first));
+  }
+  function allPrep(c) {
+    var n = splitQty(c).name;
+    return !!n && n.split(' ').every(function (w) { return PREP_WORDS.indexOf(w.toLowerCase()) !== -1; });
+  }
+
   // "2 garlic cloves, finely chopped" → [{ name: "Garlic cloves", qty: "2" }]
+  // "salt, pepper, olive oil"        → three items
   function parseIngredient(raw) {
     var t = cleanLine(raw).replace(SLASH_ALT, '$1');
     if (!t) return [];
+    // "Sauce: soy sauce, honey, garlic" — a label in front of several items
+    var lm = t.match(/^([^:\d]{1,30}):\s*(.+)$/);
+    if (lm && wordCount(lm[1]) <= 3 && splitTopLevel(lm[2]).length > 1) t = lm[2];
+    var chunks = splitTopLevel(t);
+    // "boneless, skinless chicken thighs": the first part is only a description, keep going
+    while (chunks.length > 1 && allPrep(chunks[0])) chunks.splice(0, 2, chunks[0] + ' ' + chunks[1]);
+    var out = [];
+    chunks.forEach(function (c, i) {
+      if (i > 0 && isNoteChunk(c)) {
+        var last = out[out.length - 1];
+        var pm = c.replace(/^\s*(about|approx\.?|approximately|around|ca\.?|roughly)\s+/i, '').match(ONLY_QTY);
+        if (last && !last.qty && pm) last.qty = fmtQty(pm[1], pm[2]);
+        return;
+      }
+      out = out.concat(parseOne(c));
+    });
+    return out;
+  }
+
+  function parseOne(t) {
     var jm = t.match(/^(?:the\s+)?(?:juice|zest|juice and zest|zest and juice)\s+(?:of\s+)?(\d+|a|an|one|half|½)\s+(.+)$/i);
     if (jm) t = (/^\d+$/.test(jm[1]) ? jm[1] : /half|½/i.test(jm[1]) ? '½' : '1') + ' ' + jm[2];
     var s = splitQty(t);
@@ -169,11 +225,7 @@
       if (!qty && /\d/.test(inner)) qty = inner.trim();
       return ' ';
     });
-    var parts = name.split(/\s*[,;]\s*|\s+[-–—]\s+/);
-    // "boneless, skinless chicken thighs": the first part is only a description, keep going
-    while (parts.length > 1 && parts[0].split(' ').every(function (w) { return PREP_WORDS.indexOf(w.toLowerCase()) !== -1; })) {
-      parts[0] = parts[0] + ' ' + parts.splice(1, 1)[0];
-    }
+    var parts = name.split(/\s+[-–—]\s+/);
     name = parts[0];
     if (!qty && parts[1]) {
       var pm = parts[1].trim().match(ONLY_QTY);
@@ -182,7 +234,11 @@
     name = name.replace(NOTE_RE, '').split(/\s+or\s+/i)[0];
     name = stripPrep(name.replace(/\s+/g, ' ').trim());
     name = name.replace(/^[\s.,:;*\-–—]+|[\s.,:;*\-–—]+$/g, '').trim();
-    if (name.length < 2 || WATER_RE.test(name)) return [];
+    if (name.length < 2) {
+      // too little left after cleaning (e.g. "1 (optional)"): keep the line as typed
+      var fallback = t.replace(/^[\s.,:;*\-–—]+|[\s.,:;*\-–—]+$/g, '').trim();
+      return fallback.length >= 2 && fallback !== qty ? [{ name: cap(fallback).slice(0, 60), qty: '' }] : [];
+    }
     if (/^(sea\s+)?salt\s*(and|&|\+)\s*(black\s+)?pepper$|^s[oó]l\s*(i|&)\s*pieprz$/i.test(name)) {
       return [{ name: 'Salt', qty: '' }, { name: 'Black pepper', qty: '' }];
     }
@@ -197,7 +253,8 @@
     'ladle assemble store keep you this these it if we my our your in on into at after before until during wait check taste ' +
     'adjust allow turn flip continue finish note tip dodaj wymieszaj gotuj smaż pokrój podawaj piecz wlej rozgrzej ugotuj ' +
     'odcedź posyp przełóż wstaw obierz umyj').split(' ');
-  var META_RE = /^(prep|preparation time|cook|cooking|total|active|ready in|serves|servings?|yield|makes|portions?|porcje|porcji|liczba porcji|calories|kcal|difficulty|course|cuisine|author|rating|ratings|reviews?|print|pin|save|jump to|share|nutrition|czas|kalorie|trudność|keyword|keywords|diet|equipment|published|updated|by)\b|^\d+\s*(min|mins|minutes|minut|hours?|hrs?|h|godz)\b|\b\d+\s*(min|mins|minutes|minut)\.?$|^https?:|www\.|[★☆]|^\d+(\.\d+)?\s*(from|out of|\/)\s*\d+|^\d+\s*(votes|reviews|comments|ratings)/i;
+  // Recipe-page details like "Serves 4", "Prep time: 10 min", "Print recipe" (but not "Cooking spray" or "Diet cola").
+  var META_RE = /^(prep|preparation|cook|cooking|total|active|ready in|portions?|porcje|porcji|liczba porcji|calories|kcal|difficulty|course|cuisine|author|rating|ratings|reviews?|nutrition|czas|kalorie|trudność|keywords?|diet|equipment|published|updated)(\s+time)?\s*(:|\d|$)|^(serves|servings?|yield|makes)\b|^(print|pin|save|jump to|share)(\s+(this\s+)?recipe)?$|^by\s+\S+(\s+\S+){0,2}$|^\d+\s*(min|mins|minutes|minut|hours?|hrs?|h|godz)\b|\b\d+\s*(min|mins|minutes|minut)\.?$|^https?:|www\.|[★☆]|^\d+(\.\d+)?\s*(from|out of|\/)\s*\d+(\.\d+)?\s*(stars?|votes?|ratings?|reviews?|\(.*\))?$|^\d+\s*(votes|reviews|comments|ratings)/i;
   var ING_HEAD_RE = /^(ingredients?|ingredient list|składniki|what you('|’)?ll need|what you need|you('|’)?ll need|you will need|shopping list|lista zakupów)\b/i;
   var END_HEAD_RE = /^(method|instructions?|directions?|steps?|preparation|how to (make|cook|prepare)( it)?|przygotowanie|sposób przygotowania|wykonanie|notes?|recipe notes|tips?|nutrition|nutritional info(rmation)?|serving suggestions?|equipment|video|storage|faq|comments?|related recipes|you may also like)\b/i;
 
@@ -228,15 +285,28 @@
     return !/^(recipe|print recipe|jump to recipe|save recipe|pin recipe|home)$/i.test(h);
   }
 
-  // null = not an ingredient line; [] = an ingredient you don't need to buy (water)
-  function ingredientFrom(line, lenient) {
+  function isHeaderLine(t) {
+    t = cleanLine(t);
+    return !t || isIngHeader(t) || isEndHeader(t) || isSubHeader(t) || META_RE.test(t);
+  }
+  // A full sentence (a note or a cooking step), not something to buy.
+  function isSentence(t) {
+    var wc = wordCount(t);
+    if (wc > 14 || (/[.!?]$/.test(t) && wc > 6)) return true;
+    // "Serve hot." — a short step ending with a full stop
+    return /[.!?]$/.test(t) && wc > 1 && STEP_WORDS.indexOf((t.toLowerCase().match(/^[\p{L}']+/u) || [''])[0]) !== -1;
+  }
+
+  // null = not an ingredient line (a header, recipe details, a cooking step).
+  // Every other line is kept, whether or not the app knows the item —
+  // unknown items simply land in "Other".
+  // inList: the line sits in an ingredient list, so only headers and sentences are skipped;
+  // otherwise (free text with no headings) lines that read like cooking steps are skipped too.
+  function ingredientFrom(line, inList) {
     var t = cleanLine(line);
-    if (!t || META_RE.test(t) || isIngHeader(t) || isEndHeader(t) || isSubHeader(t) || isStepLike(t)) return null;
-    var items = parseIngredient(t);
-    if (!items.length) return [];
-    if (lenient) return wordCount(items[0].name) > 8 ? null : items;
-    var known = wordCount(items[0].name) <= 4 && matchEntry(norm(items[0].name));
-    return splitQty(t).qty || known ? items : null;
+    if (isHeaderLine(t)) return null;
+    if (inList ? isSentence(t) : isStepLike(t)) return null;
+    return parseIngredient(t);
   }
 
   function finishDishes(dishes) {
@@ -296,25 +366,31 @@
     var dishes = [];
     for (var i = 0; i < blocks.length; i++) {
       var bl = blocks[i], start = 0, dish;
-      var titled = bl.length > 1 && isTitleLike(bl[0]) && !(dishes.length && aliasMap[norm(cleanLine(bl[0]))]);
+      // "milk" on the first line is an item, not the name of a dish
+      var titled = bl.length > 1 && isTitleLike(bl[0]) && !aliasMap[norm(cleanLine(bl[0]))] && splitTopLevel(cleanLine(bl[0])).length === 1;
       if (titled) { dish = { name: dishTitle(bl[0]), items: [] }; dishes.push(dish); start = 1; }
       else if (dishes.length) dish = dishes[dishes.length - 1];
-      else return null;
+      else { dish = { name: 'Recipe', items: [] }; dishes.push(dish); }
       for (var j = start; j < bl.length; j++) {
+        if (isEndHeader(bl[j])) return null; // "Instructions:" follows: read it as a full recipe
         var got = ingredientFrom(bl[j], true);
-        if (got === null) return null;
+        if (got === null) {
+          if (isHeaderLine(bl[j])) continue; // "For the sauce:" between ingredients
+          return null;                       // a cooking step: this isn't a simple list
+        }
         dish.items = dish.items.concat(got);
       }
     }
     return finishDishes(dishes);
   }
 
-  // Anything else: keep only lines that clearly are ingredients.
+  // Anything else: keep every line except headers, recipe details and cooking steps.
   function looseMode(lines) {
-    var title = null, items = [];
+    var title = null, items = [], ended = false;
     lines.forEach(function (l) {
-      if (!l) return;
-      if (!items.length && !title && isTitleLike(l) && !aliasMap[norm(cleanLine(l))]) { title = l; return; }
+      if (!l || ended) return;
+      if (isEndHeader(l)) { ended = items.length > 0; return; } // "Instructions:" — the rest is the method
+      if (!items.length && !title && isTitleLike(l) && !aliasMap[norm(cleanLine(l))] && splitTopLevel(cleanLine(l)).length === 1) { title = l; return; }
       var got = ingredientFrom(l, false);
       if (got) items = items.concat(got);
     });
@@ -680,24 +756,25 @@
       var sub = items.length + ' ingredient' + (items.length === 1 ? '' : 's') + (list.from ? ' · from ' + list.from : '');
       content.append(el('div', { class: 'dish-head' }, [
         el('span', { class: 'dish-icon', text: '🍽️' }),
-        el('div', {}, [el('h2', { text: list.name }), el('p', { text: sub })])
+        el('div', { class: 'dish-text' }, [el('h2', { text: list.name }), el('p', { text: sub })]),
+        items.length ? el('button', {
+          type: 'button', class: 'pill-btn accent dish-send', text: '🛒 Add All to Groceries',
+          onclick: function () { addAllToMain(list); }
+        }) : null
       ]));
-      if (active.length) {
-        active.sort(function (a, b) { return a.addedAt - b.addedAt; });
-        content.append(el('div', { class: 'rows' }, active.map(function (i) { return itemRow(i, list); })));
-      }
-    } else {
-      allCats().forEach(function (c) {
-        var group = active.filter(function (i) {
-          return (hasCat(i.category) ? i.category : 'Other') === c.name;
-        }).sort(function (a, b) { return a.addedAt - b.addedAt; });
-        if (!group.length) return;
-        content.append(el('section', { class: 'group' }, [
-          el('h3', { class: 'group-title' }, [c.icon + ' ' + c.name, el('span', { class: 'group-count', text: String(group.length) })]),
-          el('div', { class: 'rows' }, group.map(function (i) { return itemRow(i, list); }))
-        ]));
-      });
     }
+
+    // Every list, recipes included, is grouped under the same category headers.
+    allCats().forEach(function (c) {
+      var group = active.filter(function (i) {
+        return (hasCat(i.category) ? i.category : 'Other') === c.name;
+      }).sort(function (a, b) { return a.addedAt - b.addedAt; });
+      if (!group.length) return;
+      content.append(el('section', { class: 'group' }, [
+        el('h3', { class: 'group-title' }, [c.icon + ' ' + c.name, el('span', { class: 'group-count', text: String(group.length) })]),
+        el('div', { class: 'rows' }, group.map(function (i) { return itemRow(i, list); }))
+      ]));
+    });
 
     if (!active.length) {
       var anyInCart = items.some(function (i) { return i.inCart && matchesFilter(i, list); });
@@ -805,6 +882,15 @@
   function openAdd() {
     var state = { tab: 'all', override: null };
     var typing = false;
+    // Adding to a recipe list: when you're done, offer to put the new items on Groceries too.
+    var startList = currentList();
+    var before = {};
+    listItems(startList).forEach(function (i) { before[i.id] = true; });
+    function onDone() {
+      if (startList.type !== 'recipe') return;
+      var fresh = listItems(startList).filter(function (i) { return !before[i.id] && !i.inCart; });
+      if (fresh.length) setTimeout(function () { askAddToMain(fresh); }, 0);
+    }
 
     var input = el('input', {
       class: 'search-input', type: 'text', placeholder: 'Add item, e.g. 2x milk',
@@ -821,7 +907,7 @@
     var seg = el('div', { class: 'seg', role: 'tablist' });
     var suggest = el('div', { class: 'suggest' });
     var body = el('div', { class: 'add-body' });
-    var sheet = openSheet({ full: true, head: head, label: 'Add items' });
+    var sheet = openSheet({ full: true, head: head, label: 'Add items', onClose: onDone });
     sheet.body.append(seg, suggest, body);
 
     function currentOverride(name) {
@@ -1190,18 +1276,42 @@
     switchList('main');
     toast('List deleted');
   }
-  function addAllToMain() {
-    var list = currentList();
+  // Copies items onto the main Groceries list, skipping ones already on it.
+  function addToMain(items) {
     var main = data.lists.find(function (l) { return l.id === 'main'; });
-    var todo = listItems(list).filter(function (i) { return !i.inCart; });
     var added = 0;
-    todo.forEach(function (i) {
+    items.forEach(function (i) {
       var ex = findOnList(i.name, main);
       if (ex && !ex.inCart) return;
       addItem({ list: main, name: i.name, qty: i.qty, category: i.category, store: '', silent: true });
       added++;
     });
-    toast(added ? 'Added ' + added + ' item(s) to Groceries' : 'Everything is already on Groceries');
+    toast(added ? 'Added ' + added + ' item' + (added === 1 ? '' : 's') + ' to Groceries' : 'Everything is already on Groceries');
+  }
+  function addAllToMain(list) {
+    list = list && list.id ? list : currentList();
+    addToMain(listItems(list).filter(function (i) { return !i.inCart; }));
+  }
+
+  // After ingredients go into a recipe list: also put them on Groceries?
+  function askAddToMain(items) {
+    if (!items.length) return;
+    var sheet = openSheet({ title: 'Add to Groceries?' });
+    var main = data.lists.find(function (l) { return l.id === 'main'; });
+    var already = items.filter(function (i) { var ex = findOnList(i.name, main); return ex && !ex.inCart; }).length;
+    sheet.body.append(
+      el('p', { class: 'ask-text', text: 'Also add these ingredients to your main Groceries list?' }),
+      el('p', { class: 'hint', text: items.length + ' ingredient' + (items.length === 1 ? '' : 's') +
+        (already ? ' · ' + already + ' already on Groceries (won’t be added twice)' : '') }),
+      el('button', {
+        type: 'button', class: 'primary-btn wide', text: 'Yes, Add to Groceries',
+        onclick: function () { closeSheet(sheet); addToMain(items); }
+      }),
+      el('button', {
+        type: 'button', class: 'secondary-btn wide', text: 'Recipe List Only',
+        onclick: function () { closeSheet(sheet); }
+      })
+    );
   }
   function resetFrequent() {
     if (!confirm('Forget how often you added each item?')) return;
@@ -1280,7 +1390,7 @@
   }
 
   function importDishes(dishes, source) {
-    var firstId = null;
+    var firstId = null, created = [];
     var t = Date.now();
     dishes.forEach(function (d) {
       var id = uid();
@@ -1288,15 +1398,17 @@
       data.lists.push({ id: id, name: d.name, type: 'recipe', from: d.from || source || '', createdAt: t });
       d.items.forEach(function (ing, i) {
         var name = niceName(ing.name);
-        data.items.push({
+        var item = {
           id: uid(), listId: id, name: name, qty: ing.qty || '', category: detectCategory(name),
           store: '', inCart: false, addedAt: t + i, cartAt: 0
-        });
+        };
+        data.items.push(item);
+        created.push(item);
       });
       t += 1000;
     });
     save();
-    return firstId;
+    return { id: firstId, items: created };
   }
 
   function openImport(preset, source, onImported) {
@@ -1346,11 +1458,12 @@
     ta.addEventListener('input', function () { dishes = parseImport(ta.value); show(); });
     go.addEventListener('click', function () {
       if (!dishes.length) return;
-      var id = importDishes(dishes, source);
+      var res = importDishes(dishes, source);
       closeSheet(sheet);
       if (onImported) onImported();
-      switchList(id);
+      switchList(res.id);
       toast(dishes.length > 1 ? 'Imported ' + dishes.length + ' recipes' : 'Imported ' + dishes[0].name);
+      askAddToMain(res.items);
     });
 
     if (preset) {
