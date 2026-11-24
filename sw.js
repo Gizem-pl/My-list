@@ -1,6 +1,6 @@
 // Keeps a copy of the app on your phone so it opens without internet.
 // When you change any app file, bump the version number below so phones pick up the new files.
-var CACHE = 'grocery-v11';
+var CACHE = 'grocery-v12';
 var FILES = [
   './',
   'index.html',
@@ -9,9 +9,9 @@ var FILES = [
   'app.js',
   'manifest.json',
   'icon.svg',
-  'icon-180.png',
-  'icon-192.png',
-  'icon-512.png'
+  'icon-sky-180.png',
+  'icon-sky-192.png',
+  'icon-sky-512.png'
 ];
 
 self.addEventListener('install', function (e) {
