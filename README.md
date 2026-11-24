@@ -1,4 +1,4 @@
-# Grocery List
+# My list
 
 A grocery shopping app made with plain HTML, CSS and JavaScript. Everything is saved on your device, and once it's opened from GitHub Pages it works without internet.
 
