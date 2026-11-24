@@ -1,6 +1,6 @@
 // Keeps a copy of the app on your phone so it opens without internet.
 // When you change any app file, bump the version number below so phones pick up the new files.
-var CACHE = 'grocery-v9';
+var CACHE = 'grocery-v10';
 var FILES = [
   './',
   'index.html',
