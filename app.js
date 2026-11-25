@@ -78,7 +78,7 @@
     x: 'x ×',
     pcs: 'pieces piece pcs pc szt sztuki sztuka sztuk'
   };
-  var OTHER_UNITS = 'cups cup pinches pinch dashes dash cloves clove cans can tins tin jars jar packs pack packets packet packages package bunches bunch handfuls handful slices slice stalks stalk sprigs sprig heads head sticks stick sheets sheet bottles bottle bags bag boxes box knobs knob drops drop szklanki szklanka szklanek szczypta szczypty ząbki ząbek ząbków puszka puszki puszek opakowanie opakowania garść garści pęczek pęczki plaster plastry plasterki kostka kostki';
+  var OTHER_UNITS = 'cups cup pinches pinch dashes dash cloves clove cans can tins tin jars jar packs pack packets packet packages package bunches bunch handfuls handful slices slice stalks stalk sprigs sprig heads head sticks stick sheets sheet bottles bottle bags bag boxes box knobs knob drops drop szklanki szklanka szklanek szczypta szczypty ząbki ząbek ząbków puszka puszki puszek opakowanie opakowania garść garści pęczek pęczki plaster plastry plasterki kostka kostki arkusz arkusze arkuszy arkuszach listek listki listków płat płaty płatów';
   var unitMap = {};
   Object.keys(UNIT_CANON).forEach(function (c) { UNIT_CANON[c].split(' ').forEach(function (u) { unitMap[u] = c; }); });
   OTHER_UNITS.split(' ').forEach(function (u) { unitMap[u] = u; });
@@ -124,7 +124,10 @@
   var PREP_WORDS = ('finely roughly thinly freshly coarsely very chopped diced sliced grated shredded crushed peeled deseeded seeded ' +
     'pitted halved quartered softened melted beaten cooked uncooked raw fresh boneless skinless ripe large medium small big ' +
     'extra-large heaped heaping level rounded generous good quality good-quality organic about approx approximately around ' +
-    'chilled cold trimmed washed drained rinsed torn picked').split(' ');
+    'chilled cold trimmed washed drained rinsed torn picked ' +
+    'pokrojony pokrojona pokrojone pokrojonych posiekany posiekana posiekane posiekanej drobno grubo cienko ' +
+    'starty starta starte startego obrany obrana obrane umyty umyta umyte ugotowany ugotowana ugotowane ' +
+    'roztopiony roztopiona roztopione świeży świeża świeże świeżo duży duża duże mały mała małe średni średnia średnie').split(' ');
   var NOTE_RE = /\s*\b(to taste|as needed|as required|if needed|for serving|to serve|for garnish|to garnish|for decoration|for topping|for frying|for greasing|for brushing|for dusting|optional|plus extra|plus more|or more|divided|at room temperature|room temperature|or to taste|according to taste|do smaku|opcjonalnie|do podania|do dekoracji|do smażenia)\b.*$/i;
 
   // List markers copied along with the text: symbols, checkboxes, "1." and the
@@ -176,16 +179,30 @@
   // After a comma: "finely chopped", "to taste", "drained", "500g" describe the item before it;
   // "eggs", "2 onions", "za'atar" are items of their own.
   var NOTE_START = ('to for or and plus about approx approximately around ca roughly at in into cut such see if ' +
-    'with without juice zest only optional divided preferably ideally e.g. eg i.e. ie').split(' ');
+    'with without juice zest only optional divided preferably ideally e.g. eg i.e. ie w bez lub albo').split(' ');
+  // "finely", "sliced", "toasted", "minced": words that describe how something is prepared
+  function isPrepWord(w) {
+    w = String(w || '').toLowerCase().replace(/[^\p{L}-]/gu, '');
+    return PREP_WORDS.indexOf(w) !== -1 || w === 'minced' || /ly$/.test(w) || (w.length > 4 && /ed$/.test(w) && !/seed$/.test(w));
+  }
   function isNoteChunk(c) {
     var t = c.replace(/^\s*(about|approx\.?|approximately|around|ca\.?|roughly)\s+/i, '');
     if (ONLY_QTY.test(t)) return true;
     if (splitQty(c).qty) return false;
     if (aliasMap[norm(c)]) return false;
     if (/^\s*(\w+\s*)?(to taste|as needed|as required|if needed|for serving|to serve|for garnish|optional|do smaku|opcjonalnie)\b/i.test(c)) return true;
-    var first = c.toLowerCase().split(/\s+/)[0].replace(/[^\p{L}.]/gu, '');
-    if (NOTE_START.indexOf(first) !== -1 || PREP_WORDS.indexOf(first) !== -1 || first === 'minced') return true;
-    return /ly$/.test(first) || (first.length > 4 && /ed$/.test(first));
+    var words = c.trim().split(/\s+/);
+    var first = words[0].toLowerCase().replace(/[^\p{L}.]/gu, '');
+    if (NOTE_START.indexOf(first) !== -1) return true;
+    if (isPrepWord(first)) {
+      // "finely chopped", "peeled and grated", "soaked in water" describe the item before;
+      // "shredded nori", "toasted sesame seeds", "sliced green onions" are items of their own.
+      while (words.length && (isPrepWord(words[0]) || /^(and|&)$/i.test(words[0]))) words.shift();
+      if (!words.length || NOTE_START.indexOf(words[0].toLowerCase()) !== -1) return true;
+      return !matchEntry(norm(words.join(' ')));
+    }
+    // "skin removed", "hard boiled", "toasted": a short description that ends with how it's prepared
+    return words.length <= 3 && isPrepWord(words[words.length - 1]);
   }
   function allPrep(c) {
     var n = splitQty(c).name;
@@ -197,9 +214,13 @@
   function parseIngredient(raw) {
     var t = cleanLine(raw).replace(SLASH_ALT, '$1');
     if (!t) return [];
-    // "Sauce: soy sauce, honey, garlic" — a label in front of several items
+    // "Sauce: soy sauce, honey, garlic", "Garnish: nori strips" — a label in front of the items
+    // (but "Rice: 2 cups, cooked" is an item followed by its amount)
     var lm = t.match(/^([^:\d]{1,30}):\s*(.+)$/);
-    if (lm && wordCount(lm[1]) <= 3 && splitTopLevel(lm[2]).length > 1) t = lm[2];
+    if (lm && wordCount(lm[1]) <= 3 && !aliasMap[norm(lm[1])] && !ONLY_QTY.test(splitTopLevel(lm[2])[0] || '')) {
+      var groupLabel = SUB_HEAD_RE.test(lm[1].trim()) || /^(for|to|do|na)\s/i.test(lm[1].trim());
+      if (groupLabel || splitTopLevel(lm[2]).length > 1) t = lm[2];
+    }
     var chunks = splitTopLevel(t);
     // "boneless, skinless chicken thighs": the first part is only a description, keep going
     while (chunks.length > 1 && allPrep(chunks[0])) chunks.splice(0, 2, chunks[0] + ' ' + chunks[1]);
@@ -231,7 +252,8 @@
       var pm = parts[1].trim().match(ONLY_QTY);
       if (pm) qty = fmtQty(pm[1], pm[2]);
     }
-    name = name.replace(NOTE_RE, '').split(/\s+or\s+/i)[0];
+    name = name.replace(/^\s*(optional|opcjonalnie)\s*:?\s+/i, ''); // "Optional nori" is nori
+    name = name.replace(NOTE_RE, '').split(/\s+(?:or|lub|albo)\s+/i)[0];
     name = stripPrep(name.replace(/\s+/g, ' ').trim());
     name = name.replace(/^[\s.,:;*\-–—]+|[\s.,:;*\-–—]+$/g, '').trim();
     if (name.length < 2) {
@@ -241,6 +263,17 @@
     }
     if (/^(sea\s+)?salt\s*(and|&|\+)\s*(black\s+)?pepper$|^s[oó]l\s*(i|&)\s*pieprz$/i.test(name)) {
       return [{ name: 'Salt', qty: '' }, { name: 'Black pepper', qty: '' }];
+    }
+    // "Sesame seeds and nori", "2 onions & 3 carrots": two things to buy.
+    // ("Sweet and sour sauce", "Mac and cheese" stay as one.)
+    var pair = aliasMap[norm(name)] ? [] : name.split(/\s+(?:and|&|\+|i)\s+/i);
+    if (pair.length === 2) {
+      var both = pair.map(function (p, i) {
+        var ps = splitQty(p);
+        var n = stripPrep(ps.name);
+        return aliasMap[norm(n)] ? { name: cap(n).slice(0, 60), qty: ps.qty || (i === 0 ? qty : '') } : null;
+      });
+      if (both[0] && both[1]) return both;
     }
     return [{ name: cap(name).slice(0, 60), qty: qty }];
   }
@@ -256,15 +289,18 @@
   // Recipe-page details like "Serves 4", "Prep time: 10 min", "Print recipe" (but not "Cooking spray" or "Diet cola").
   var META_RE = /^(prep|preparation|cook|cooking|total|active|ready in|portions?|porcje|porcji|liczba porcji|calories|kcal|difficulty|course|cuisine|author|rating|ratings|reviews?|nutrition|czas|kalorie|trudność|keywords?|diet|equipment|published|updated)(\s+time)?\s*(:|\d|$)|^(serves|servings?|yield|makes)\b|^(print|pin|save|jump to|share)(\s+(this\s+)?recipe)?$|^by\s+\S+(\s+\S+){0,2}$|^\d+\s*(min|mins|minutes|minut|hours?|hrs?|h|godz)\b|\b\d+\s*(min|mins|minutes|minut)\.?$|^https?:|www\.|[★☆]|^\d+(\.\d+)?\s*(from|out of|\/)\s*\d+(\.\d+)?\s*(stars?|votes?|ratings?|reviews?|\(.*\))?$|^\d+\s*(votes|reviews|comments|ratings)/i;
   var ING_HEAD_RE = /^(ingredients?|ingredient list|składniki|what you('|’)?ll need|what you need|you('|’)?ll need|you will need|shopping list|lista zakupów)\b/i;
-  var END_HEAD_RE = /^(method|instructions?|directions?|steps?|preparation|how to (make|cook|prepare)( it)?|przygotowanie|sposób przygotowania|wykonanie|notes?|recipe notes|tips?|nutrition|nutritional info(rmation)?|serving suggestions?|equipment|video|storage|faq|comments?|related recipes|you may also like)\b/i;
+  var END_HEAD_RE = /^(method|instructions?|directions?|steps?|preparation(?!\s+time)|how to (make|cook|prepare)( it)?|przygotowanie|sposób przygotowania|wykonanie|notes?|recipe notes|tips?|nutrition|nutritional info(rmation)?|serving suggestions?|equipment|video|storage|faq|comments?|related recipes|you may also like)\b/i;
 
   function wordCount(t) { return String(t).split(/\s+/).filter(Boolean).length; }
   function headText(t) { return String(t).replace(/^[#*\s]+|[:：*#=_\s]+$/g, '').trim(); }
   function isIngHeader(t) { var h = headText(cleanLine(t)); return wordCount(h) <= 6 && ING_HEAD_RE.test(h); }
   function isEndHeader(t) { var h = headText(cleanLine(t)); return wordCount(h) <= 6 && END_HEAD_RE.test(h); }
+  // Group names inside an ingredient list, often written without a colon: "Toppings", "To serve".
+  var SUB_HEAD_RE = /^(optional\s+)?(toppings?|garnish(es)?|to (serve|garnish|finish|assemble|decorate)|serving|optional|extras|add-?ins|sauce|dressing|marinade|filling|glaze|assembly|dodatki|do podania|opcjonalnie|sos|marynata|nadzienie|farsz|posypka)(\s*\((optional|opcjonalnie)\))?$/i;
   function isSubHeader(t) {
     if (splitQty(t).qty) return false;
     if (/:\s*$/.test(t) && wordCount(t) <= 6) return true;
+    if (SUB_HEAD_RE.test(headText(t))) return true;
     return /^(for|do|na)\s+(the\s+)?[\p{L}\s-]+$/iu.test(t) && wordCount(t) <= 5;
   }
   function isStepLike(raw, asTitle) {
@@ -289,9 +325,22 @@
     t = cleanLine(t);
     return !t || isIngHeader(t) || isEndHeader(t) || isSubHeader(t) || META_RE.test(t);
   }
+  // "1 sheet nori, cut into strips with scissors or crumbled by hand." is still an ingredient:
+  // it starts with an amount or a known item, and the long part after the comma is only a note.
+  function startsLikeIngredient(t) {
+    var first = (splitTopLevel(t)[0] || '').replace(/[.!?]+$/, '');
+    if (!first || wordCount(first) > 6 || META_RE.test(first)) return false;
+    var fw = (first.toLowerCase().match(/^[\p{L}']+/u) || [''])[0];
+    if (STEP_WORDS.indexOf(fw) !== -1) return false;
+    var s = splitQty(first);
+    if (s.qty) return true;
+    var name = stripPrep(s.name.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim());
+    return wordCount(name) <= 3 && !!matchEntry(norm(name));
+  }
   // A full sentence (a note or a cooking step), not something to buy.
   function isSentence(t) {
     var wc = wordCount(t);
+    if (wc <= 40 && startsLikeIngredient(t)) return false;
     if (wc > 14 || (/[.!?]$/.test(t) && wc > 6)) return true;
     // "Serve hot." — a short step ending with a full stop
     return /[.!?]$/.test(t) && wc > 1 && STEP_WORDS.indexOf((t.toLowerCase().match(/^[\p{L}']+/u) || [''])[0]) !== -1;
@@ -333,13 +382,17 @@
   }
 
   // Recipes with an "Ingredients" heading: only that section is read.
+  var SECTION_BREAK = {};
   function sectionMode(lines) {
     var dishes = [], cur = null, inSection = false, before = [];
     lines.forEach(function (l) {
       if (!l) return;
       if (isIngHeader(l)) {
         if (!(inSection && cur)) {
-          var titles = before.filter(isTitleLike);
+          // The dish name comes before any "Equipment" or "Notes" block that sits above the ingredients.
+          var cut = before.indexOf(SECTION_BREAK);
+          var titles = (cut === -1 ? before : before.slice(0, cut)).filter(isTitleLike);
+          if (!titles.length) titles = before.filter(function (b) { return b !== SECTION_BREAK && isTitleLike(b); });
           cur = { name: dishTitle(dishes.length ? titles[titles.length - 1] : titles[0]), items: [] };
           dishes.push(cur);
         }
@@ -347,7 +400,12 @@
         before = [];
         return;
       }
-      if (isEndHeader(l)) { inSection = false; before = []; return; }
+      if (isEndHeader(l)) {
+        if (inSection) before = []; // the method starts: the next dish name comes after it
+        else before.push(SECTION_BREAK);
+        inSection = false;
+        return;
+      }
       if (inSection) {
         var got = ingredientFrom(l, true);
         if (got) cur.items = cur.items.concat(got);
