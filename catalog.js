@@ -524,8 +524,8 @@ window.TRAVEL_CATALOG = {
     '🧢|Hat|cap,sun hat,beanie,czapka,kapelusz',
     '🧣|Scarf|szalik,chusta',
     '🧤|Gloves|rekawiczki',
-    '👟|Trainers|sneakers,running shoes,buty sportowe,adidasy',
-    '👞|Shoes|buty,polbuty',
+    '👟|Trainers|sneakers,running shoes,running shoe,buty sportowe,adidasy',
+    '👞|Shoes|shoe,buty,polbuty',
     '🩴|Flip-flops|flip flops,sandals,slippers,klapki,sandaly,japonki',
     '🥾|Hiking boots|boots,buty trekkingowe,buty gorskie'
   ],

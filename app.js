@@ -136,8 +136,8 @@
     }
     if (qty && (m = t.match(LEAD_UNIT))) { qty += ' ' + canonUnit(m[1]); t = m[2].trim(); } // "2x 400g cans tomatoes"
     if (!qty && (m = t.match(UNIT_OF))) { qty = '1 ' + canonUnit(m[1]); t = m[2].trim(); }    // "Pinch of salt"
+    if (!qty && (m = t.match(TRAIL_X))) { qty = m[2] + 'x'; t = m[1].trim(); }               // "Eggs x 6" (before TRAIL, which would keep the "x" in the name)
     if (!qty && (m = t.match(TRAIL))) { qty = fmtQty(m[2], m[3]); t = m[1].trim(); }
-    if (!qty && (m = t.match(TRAIL_X))) { qty = m[2] + 'x'; t = m[1].trim(); }
     return { qty: qty, name: t };
   }
   // The add box: a pasted "• milk 2x" loses its bullet (a leading number stays, it's the amount).
