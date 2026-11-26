@@ -4,9 +4,35 @@
   // ================= Settings =================
   var BUILT_IN = window.GROCERY_CATEGORIES;
   var CATALOG = window.GROCERY_CATALOG;
+  var TRAVEL_CATS = window.TRAVEL_CATEGORIES;
+  var TRAVEL_CATALOG = window.TRAVEL_CATALOG;
   var STORES = ['Biedronka', 'Carrefour', 'Rossmann', 'Hebe', 'Auchan'];
   var CUSTOM_STYLE = { icon: '📌', h: 210, s: '20%' };
   var QUICK_QTY = ['1x', '2x', '3x', '4x', '6x', '250g', '500g', '1kg', '1l'];
+  var QUICK_QTY_TRAVEL = ['1x', '2x', '3x', '4x', '5x', '6x', '7x'];
+  // A list named like this starts out as a packing list.
+  var TRIP_WORDS = 'travel trip vacation holiday packing journey getaway camping wakacje urlop wyjazd podroz ferie majowka wycieczka';
+
+  // Shopping lists (Groceries, recipes, your own lists) and travel packing lists
+  // look and behave differently. These are the words each one uses.
+  var WORDS = {
+    grocery: {
+      done: 'In Cart', clear: 'Clear Cart', doneHint: 'Tap an item to put it back on the list.',
+      allDone: ['🎉', 'All done!', 'Everything is in your cart.'],
+      empty: ['🧺', 'Nothing here yet', 'Tap ＋ Add item to start your list.'],
+      placeholder: 'Add item, e.g. 2x milk', tap: 'Got it: ', untap: 'Put back: ',
+      tip: 'Tip: press and hold an item to change its amount, category or store.',
+      newCat: 'e.g. Baby, Pets', catHint: 'Make your own categories, like Baby for nappies, wipes and baby food.'
+    },
+    travel: {
+      done: 'Packed', clear: 'Unpack All', doneHint: 'Tap an item to unpack it.',
+      allDone: ['🏝️', 'All packed!', 'Have a great trip.'],
+      empty: ['🧳', 'Nothing to pack yet', 'Tap ＋ Add item to start packing.'],
+      placeholder: 'Add item, e.g. passport', tap: 'Packed: ', untap: 'Unpack: ',
+      tip: 'Tip: press and hold an item to change its amount or category.',
+      newCat: 'e.g. Camping, Kids', catHint: 'Make your own packing categories, like Camping for the tent and sleeping bags.'
+    }
+  };
 
   var KEY = 'groceryAppData';          // everything the app saves
   var LIST_KEY = 'groceryCurrentList'; // which list is open
@@ -466,31 +492,38 @@
   }
 
   // ================= Catalog index =================
-  var entries = [];
-  var aliasMap = {};
-  Object.keys(CATALOG).forEach(function (cat) {
-    CATALOG[cat].forEach(function (line) {
-      var p = line.split('|');
-      var e = { icon: p[0], name: p[1], category: cat, key: norm(p[1]), aliases: [] };
-      [p[1]].concat(p[2] ? p[2].split(',') : []).forEach(function (a) {
-        var k = norm(a);
-        if (!k) return;
-        e.aliases.push(k);
-        if (!aliasMap[k]) aliasMap[k] = e;
+  function buildIndex(catalog) {
+    var idx = { entries: [], aliasMap: {} };
+    Object.keys(catalog).forEach(function (cat) {
+      catalog[cat].forEach(function (line) {
+        var p = line.split('|');
+        var e = { icon: p[0], name: p[1], category: cat, key: norm(p[1]), aliases: [] };
+        [p[1]].concat(p[2] ? p[2].split(',') : []).forEach(function (a) {
+          var k = norm(a);
+          if (!k) return;
+          e.aliases.push(k);
+          if (!idx.aliasMap[k]) idx.aliasMap[k] = e;
+        });
+        idx.entries.push(e);
       });
-      entries.push(e);
     });
-  });
+    return idx;
+  }
+  var GROCERY_INDEX = buildIndex(CATALOG);
+  var TRAVEL_INDEX = buildIndex(TRAVEL_CATALOG);
+  var aliasMap = GROCERY_INDEX.aliasMap; // the recipe reader only knows groceries
+  function indexFor(kind) { return kind === 'travel' ? TRAVEL_INDEX : GROCERY_INDEX; }
 
   // Finds the best catalog item inside a name: "salmon fillet" → Salmon,
   // "chicken broth" → Stock (the last word usually says what it is).
-  function matchEntry(k) {
+  function matchEntry(k, kind) {
     if (!k) return null;
-    if (aliasMap[k]) return aliasMap[k];
+    var map = indexFor(kind).aliasMap;
+    if (map[k]) return map[k];
     var w = k.split(' '), best = null, score = -1;
     for (var i = 0; i < w.length; i++) {
       for (var j = i + 1; j <= w.length; j++) {
-        var e = aliasMap[w.slice(i, j).join(' ')];
+        var e = map[w.slice(i, j).join(' ')];
         if (e) {
           var sc = (j - i) * 100 + j;
           if (sc > score) { score = sc; best = e; }
@@ -508,9 +541,11 @@
       items: [],
       customCats: [],
       learned: {}, // corrections you made: item → category
-      counts: {}   // how often you added each item
+      counts: {},  // how often you added each item
+      travel: blankTravel() // the same three things, for packing lists
     };
   }
+  function blankTravel() { return { customCats: [], learned: {}, counts: {} }; }
 
   function load() {
     var d = read(KEY, null);
@@ -519,6 +554,17 @@
       d.learned = d.learned || {};
       d.counts = d.counts || {};
       if (!d.lists.some(function (l) { return l.id === 'main'; })) d.lists.unshift(blankData().lists[0]);
+      var firstTime = !d.travel;
+      d.travel = d.travel || blankTravel();
+      d.travel.customCats = Array.isArray(d.travel.customCats) ? d.travel.customCats : [];
+      d.travel.learned = d.travel.learned || {};
+      d.travel.counts = d.travel.counts || {};
+      if (firstTime) {
+        // Lists you already made for a trip become packing lists.
+        data = d;
+        d.lists.forEach(function (l) { if (l.type === 'custom' && looksLikeTrip(l.name)) setKind(l, 'travel'); });
+        write(KEY, d);
+      }
       return d;
     }
 
@@ -554,68 +600,79 @@
   if (filter !== 'All' && STORES.indexOf(filter) === -1) filter = 'All';
 
   // ================= Categories =================
-  function allCats() {
-    return BUILT_IN.concat(data.customCats.map(function (n) {
+  // kind is 'grocery' (the default) or 'travel'. Each has its own categories,
+  // ready-made items, corrections and frequent items.
+  function memory(kind) { return kind === 'travel' ? data.travel : data; }
+  function builtIn(kind) { return kind === 'travel' ? TRAVEL_CATS : BUILT_IN; }
+  function allCats(kind) {
+    return builtIn(kind).concat(memory(kind).customCats.map(function (n) {
       return { name: n, icon: CUSTOM_STYLE.icon, h: CUSTOM_STYLE.h, s: CUSTOM_STYLE.s, custom: true };
     }));
   }
-  function hasCat(name) { return allCats().some(function (c) { return c.name === name; }); }
-  function catInfo(name) {
-    return allCats().find(function (c) { return c.name === name; }) || BUILT_IN[BUILT_IN.length - 1];
+  function hasCat(name, kind) { return allCats(kind).some(function (c) { return c.name === name; }); }
+  function catInfo(name, kind) {
+    var b = builtIn(kind);
+    return allCats(kind).find(function (c) { return c.name === name; }) || b[b.length - 1];
   }
   function tint(ci) { return '--h:' + ci.h + ';--s:' + ci.s; }
 
   // Singular "pepper" in a recipe means black pepper; "peppers" means bell peppers.
   var RAW_OVERRIDES = { pepper: 'black pepper', pieprz: 'black pepper' };
-  function entryFor(name) {
-    var raw = String(name || '').trim().toLowerCase();
-    if (RAW_OVERRIDES[raw]) return aliasMap[norm(RAW_OVERRIDES[raw])];
-    return matchEntry(norm(name));
+  function rawOverride(name, kind) {
+    return kind === 'travel' ? null : RAW_OVERRIDES[String(name || '').trim().toLowerCase()];
   }
-  function detectCategory(name) {
+  function entryFor(name, kind) {
+    var o = rawOverride(name, kind);
+    if (o) return aliasMap[norm(o)];
+    return matchEntry(norm(name), kind);
+  }
+  function detectCategory(name, kind) {
     var k = norm(name);
-    if (data.learned[k] && hasCat(data.learned[k])) return data.learned[k];
-    var c = data.counts[k];
-    if (c && c.category && hasCat(c.category)) return c.category;
-    var e = entryFor(name);
+    var mem = memory(kind);
+    if (mem.learned[k] && hasCat(mem.learned[k], kind)) return mem.learned[k];
+    var c = mem.counts[k];
+    if (c && c.category && hasCat(c.category, kind)) return c.category;
+    var e = entryFor(name, kind);
     return e ? e.category : 'Other';
   }
-  function iconFor(name, category) {
+  function iconFor(name, category, kind) {
     var k = norm(name);
-    var raw = String(name || '').trim().toLowerCase();
-    if (aliasMap[k] && !RAW_OVERRIDES[raw]) return aliasMap[k].icon;
-    var e = entryFor(name);
+    var map = indexFor(kind).aliasMap;
+    if (map[k] && !rawOverride(name, kind)) return map[k].icon;
+    var e = entryFor(name, kind);
     if (e && e.category === category) return e.icon;
-    return catInfo(category).icon;
+    return catInfo(category, kind).icon;
   }
   // "egg" → "Eggs", but "chicken breast" stays as you typed it.
-  function niceName(raw) {
+  function niceName(raw, kind) {
     var k = norm(raw);
-    var e = aliasMap[k];
+    var e = indexFor(kind).aliasMap[k];
     return e && e.key === k ? e.name : cap(raw);
   }
-  function learn(name, category) {
+  function learn(name, category, kind) {
     var k = norm(name);
-    data.learned[k] = category;
-    if (data.counts[k]) data.counts[k].category = category;
+    var mem = memory(kind);
+    mem.learned[k] = category;
+    if (mem.counts[k]) mem.counts[k].category = category;
   }
 
-  function addCustomCategory(raw) {
+  function addCustomCategory(raw, kind) {
     var name = cap(String(raw || '').slice(0, 30));
     if (!name) return null;
-    var found = allCats().find(function (c) { return c.name.toLowerCase() === name.toLowerCase(); });
+    var found = allCats(kind).find(function (c) { return c.name.toLowerCase() === name.toLowerCase(); });
     if (found) return found.name;
-    data.customCats.push(name);
+    memory(kind).customCats.push(name);
     save();
     return name;
   }
-  function removeCustomCategory(name) {
-    var used = data.items.filter(function (i) { return i.category === name; }).length;
-    if (!confirm('Remove “' + name + '”?' + (used ? ' Its ' + used + ' item(s) will move to Other.' : ''))) return false;
-    data.customCats = data.customCats.filter(function (c) { return c !== name; });
-    data.items.forEach(function (i) { if (i.category === name) i.category = 'Other'; });
-    Object.keys(data.learned).forEach(function (k) { if (data.learned[k] === name) delete data.learned[k]; });
-    Object.keys(data.counts).forEach(function (k) { if (data.counts[k].category === name) data.counts[k].category = 'Other'; });
+  function removeCustomCategory(name, kind) {
+    var mem = memory(kind);
+    var items = data.items.filter(function (i) { return i.category === name && kindOf(listById(i.listId)) === kind; });
+    if (!confirm('Remove “' + name + '”?' + (items.length ? ' Its ' + items.length + ' item(s) will move to Other.' : ''))) return false;
+    mem.customCats = mem.customCats.filter(function (c) { return c !== name; });
+    items.forEach(function (i) { i.category = 'Other'; });
+    Object.keys(mem.learned).forEach(function (k) { if (mem.learned[k] === name) delete mem.learned[k]; });
+    Object.keys(mem.counts).forEach(function (k) { if (mem.counts[k].category === name) mem.counts[k].category = 'Other'; });
     save();
     renderMain();
     return true;
@@ -625,9 +682,31 @@
   function currentList() {
     return data.lists.find(function (l) { return l.id === currentId; }) || data.lists[0];
   }
+  function listById(id) { return data.lists.find(function (l) { return l.id === id; }); }
   function listItems(list) { return data.items.filter(function (i) { return i.listId === list.id; }); }
+  function kindOf(list) { return list && list.type === 'travel' ? 'travel' : 'grocery'; }
+  function words(list) { return WORDS[kindOf(list)]; }
+  // Store tabs are for shopping lists only (not recipes or packing lists).
+  function usesStores(list) { return list.type !== 'recipe' && list.type !== 'travel'; }
+  function looksLikeTrip(name) {
+    var trip = TRIP_WORDS.split(' ');
+    return norm(name).split(' ').some(function (w) { return trip.indexOf(w) !== -1; });
+  }
+  // Turns your own list into a packing list or back into a shopping list,
+  // moving its items into the matching categories.
+  function setKind(list, kind) {
+    var from = kindOf(list);
+    list.type = kind === 'travel' ? 'travel' : 'custom';
+    if (from === kind) return;
+    listItems(list).forEach(function (i) {
+      var c = detectCategory(i.name, kind);
+      // Not recognised: keep it in your own category, if it was in one.
+      if (c === 'Other' && memory(from).customCats.indexOf(i.category) !== -1) c = addCustomCategory(i.category, kind);
+      i.category = c;
+    });
+  }
   function matchesFilter(item, list, f) {
-    if (list.type === 'recipe') return true;
+    if (!usesStores(list)) return true;
     f = f || filter;
     return f === 'All' || !item.store || item.store === f;
   }
@@ -642,13 +721,14 @@
     renderMain();
     window.scrollTo(0, 0);
   }
-  function listIcon(l) { return l.type === 'main' ? '🛒' : l.type === 'recipe' ? '🍽️' : '📝'; }
+  function listIcon(l) { return l.type === 'main' ? '🛒' : l.type === 'recipe' ? '🍽️' : l.type === 'travel' ? '🧳' : '📝'; }
 
   // ================= Item actions =================
   function addItem(o) {
     var list = o.list || currentList();
+    var kind = kindOf(list);
     var existing = findOnList(o.name, list);
-    var store = o.store != null ? o.store : (list.type !== 'recipe' && filter !== 'All' ? filter : '');
+    var store = o.store != null ? o.store : (usesStores(list) && filter !== 'All' ? filter : '');
     if (existing) {
       var wasInCart = existing.inCart;
       existing.inCart = false;
@@ -661,13 +741,14 @@
         id: uid(), listId: list.id, name: o.name, qty: o.qty || '', category: o.category,
         store: store, inCart: false, addedAt: Date.now(), cartAt: 0
       });
-      if (!o.silent) toast('Added ' + iconFor(o.name, o.category) + ' ' + o.name);
+      if (!o.silent) toast('Added ' + iconFor(o.name, o.category, kind) + ' ' + o.name);
     }
     if (o.manual) {
       var k = norm(o.name);
-      var c = data.counts[k] || { n: 0 };
+      var counts = memory(kind).counts;
+      var c = counts[k] || { n: 0 };
       c.name = o.name; c.n += 1; c.category = o.category; c.last = Date.now();
-      data.counts[k] = c;
+      counts[k] = c;
     }
     save();
     renderMain();
@@ -677,10 +758,25 @@
     var item = data.items.find(function (i) { return i.id === id; });
     if (!item) return;
     item.inCart = !item.inCart;
+    var type = currentList().type;
     if (item.inCart) item.cartAt = Date.now();
-    else if (currentList().type !== 'recipe') item.addedAt = Date.now();
+    else if (type !== 'recipe' && type !== 'travel') item.addedAt = Date.now(); // unpacked items go back to their spot
     save();
     renderMain();
+  }
+
+  // Packing lists are kept for the next trip: this puts everything back on the list.
+  function unpackAll(list) {
+    var packed = listItems(list).filter(function (i) { return i.inCart; });
+    if (!packed.length) return;
+    packed.forEach(function (i) { i.inCart = false; });
+    save();
+    renderMain();
+    toast('Unpacked ' + packed.length + ' item' + (packed.length === 1 ? '' : 's') + ', ready for the next trip', 'Undo', function () {
+      packed.forEach(function (i) { i.inCart = true; });
+      save();
+      renderMain();
+    });
   }
 
   function removeItems(ids, message) {
@@ -770,7 +866,7 @@
 
   function renderStores() {
     var list = currentList();
-    storesNav.hidden = list.type === 'recipe';
+    storesNav.hidden = !usesStores(list);
     if (storesNav.hidden) return;
     storesNav.replaceChildren();
     ['All'].concat(STORES).forEach(function (f) {
@@ -785,18 +881,19 @@
 
   // One line on the list: ○ Turkey breast 🦃 ........ 500g
   function itemRow(item, list) {
-    var ci = catInfo(item.category);
+    var kind = kindOf(list);
+    var ci = catInfo(item.category, kind);
     var b = el('button', {
       type: 'button', class: 'row' + (item.inCart ? ' done' : ''), style: tint(ci),
-      'aria-label': (item.inCart ? 'Put back: ' : 'Got it: ') + item.name + (item.qty ? ', ' + item.qty : '')
+      'aria-label': (item.inCart ? words(list).untap : words(list).tap) + item.name + (item.qty ? ', ' + item.qty : '')
     }, [
       el('span', { class: 'check', 'aria-hidden': 'true' }),
       el('span', { class: 'row-main' }, [
         el('span', { class: 'row-line' }, [
           el('span', { class: 'row-name', text: item.name }),
-          el('span', { class: 'row-emoji', 'aria-hidden': 'true', text: iconFor(item.name, item.category) })
+          el('span', { class: 'row-emoji', 'aria-hidden': 'true', text: iconFor(item.name, item.category, kind) })
         ]),
-        item.store && list.type !== 'recipe' ? el('span', { class: 'row-store', text: item.store }) : null
+        item.store && usesStores(list) ? el('span', { class: 'row-store', text: item.store }) : null
       ]),
       item.qty ? el('span', { class: 'row-qty', text: item.qty }) : null
     ]);
@@ -822,10 +919,12 @@
       ]));
     }
 
-    // Every list, recipes included, is grouped under the same category headers.
-    allCats().forEach(function (c) {
+    // Shopping lists (recipes included) are grouped by grocery category, packing lists by travel category.
+    var kind = kindOf(list);
+    var w = words(list);
+    allCats(kind).forEach(function (c) {
       var group = active.filter(function (i) {
-        return (hasCat(i.category) ? i.category : 'Other') === c.name;
+        return (hasCat(i.category, kind) ? i.category : 'Other') === c.name;
       }).sort(function (a, b) { return a.addedAt - b.addedAt; });
       if (!group.length) return;
       content.append(el('section', { class: 'group' }, [
@@ -836,19 +935,26 @@
 
     if (!active.length) {
       var anyInCart = items.some(function (i) { return i.inCart && matchesFilter(i, list); });
-      content.append(el('div', { class: 'empty' }, anyInCart
-        ? [el('div', { class: 'empty-icon', text: '🎉' }), el('p', { class: 'empty-title', text: 'All done!' }), el('p', { text: 'Everything is in your cart.' })]
-        : [el('div', { class: 'empty-icon', text: '🧺' }), el('p', { class: 'empty-title', text: 'Nothing here yet' }), el('p', { text: 'Tap ＋ Add item to start your list.' })]
-      ));
+      var msg = anyInCart ? w.allDone : w.empty;
+      content.append(el('div', { class: 'empty' }, [
+        el('div', { class: 'empty-icon', text: msg[0] }), el('p', { class: 'empty-title', text: msg[1] }), el('p', { text: msg[2] })
+      ]));
     }
+    tipEl.textContent = w.tip;
     tipEl.hidden = !active.length || !!read(TIP_KEY, false);
   }
 
   function renderCart() {
     var list = currentList();
+    var w = words(list);
     var cart = listItems(list).filter(function (i) { return i.inCart && matchesFilter(i, list); })
       .sort(function (a, b) { return b.cartAt - a.cartAt; });
     cartSection.hidden = !cart.length;
+    $('cart-title').textContent = w.done;
+    $('cart-hint').textContent = w.doneHint;
+    $('clear-cart').textContent = w.clear;
+    $('clear-cart').classList.toggle('danger', kindOf(list) !== 'travel'); // unpacking deletes nothing
+    $('clear-cart').classList.toggle('accent', kindOf(list) === 'travel');
     cartCount.textContent = cart.length ? String(cart.length) : '';
     cartGrid.replaceChildren.apply(cartGrid, cart.map(function (i) { return itemRow(i, list); }));
   }
@@ -862,6 +968,7 @@
 
   $('clear-cart').addEventListener('click', function () {
     var list = currentList();
+    if (kindOf(list) === 'travel') { unpackAll(list); return; }
     var ids = listItems(list).filter(function (i) { return i.inCart && matchesFilter(i, list); }).map(function (i) { return i.id; });
     removeItems(ids, 'Cart cleared');
   });
@@ -922,17 +1029,18 @@
   function label(text) { return el('h3', { class: 'field-label', text: text }); }
 
   // ---------- Add items ----------
-  function browseItems() {
+  function browseItems(kind) {
     var seen = {};
-    var out = entries.map(function (e) {
+    var out = indexFor(kind).entries.map(function (e) {
       seen[e.key] = true;
-      return { name: e.name, key: e.key, aliases: e.aliases, icon: e.icon, category: detectCategory(e.name) };
+      return { name: e.name, key: e.key, aliases: e.aliases, icon: e.icon, category: detectCategory(e.name, kind) };
     });
-    Object.keys(data.counts).forEach(function (k) {
+    var counts = memory(kind).counts;
+    Object.keys(counts).forEach(function (k) {
       if (seen[k]) return;
-      var c = data.counts[k];
-      var cat = hasCat(c.category) ? c.category : detectCategory(c.name);
-      out.push({ name: c.name, key: k, aliases: [k], icon: iconFor(c.name, cat), category: cat, mine: true });
+      var c = counts[k];
+      var cat = hasCat(c.category, kind) ? c.category : detectCategory(c.name, kind);
+      out.push({ name: c.name, key: k, aliases: [k], icon: iconFor(c.name, cat, kind), category: cat, mine: true });
     });
     return out;
   }
@@ -942,6 +1050,7 @@
     var typing = false;
     // Adding to a recipe list: when you're done, offer to put the new items on Groceries too.
     var startList = currentList();
+    var kind = kindOf(startList);
     var before = {};
     listItems(startList).forEach(function (i) { before[i.id] = true; });
     function onDone() {
@@ -951,7 +1060,7 @@
     }
 
     var input = el('input', {
-      class: 'search-input', type: 'text', placeholder: 'Add item, e.g. 2x milk',
+      class: 'search-input', type: 'text', placeholder: words(startList).placeholder,
       'aria-label': 'Item name', autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'done'
     });
     var clearQ = el('button', {
@@ -983,16 +1092,16 @@
     }
 
     function renderSuggest(p) {
-      var name = niceName(p.name);
-      var cat = currentOverride(name) || detectCategory(name);
-      var ci = catInfo(cat);
+      var name = niceName(p.name, kind);
+      var cat = currentOverride(name) || detectCategory(name, kind);
+      var ci = catInfo(cat, kind);
       var existing = findOnList(name);
       suggest.replaceChildren(
         el('div', { class: 'suggest-card', style: tint(ci) }, [
           el('div', { class: 'suggest-main' }, [
             el('div', { class: 'suggest-name' }, [
               name,
-              el('span', { class: 'suggest-icon', 'aria-hidden': 'true', text: iconFor(name, cat) }),
+              el('span', { class: 'suggest-icon', 'aria-hidden': 'true', text: iconFor(name, cat, kind) }),
               p.qty ? el('span', { class: 'qty-pill', text: p.qty }) : null
             ]),
             el('button', {
@@ -1001,7 +1110,7 @@
                 openCategoryPicker(cat, function (c) {
                   state.override = { key: norm(name), cat: c };
                   update();
-                });
+                }, kind);
               }
             }, [ci.icon + ' ' + ci.name, el('span', { class: 'chev', text: '▾' })])
           ]),
@@ -1014,10 +1123,10 @@
     function addTyped() {
       var p = parseQty(input.value);
       if (!p.name) return;
-      var name = niceName(p.name);
+      var name = niceName(p.name, kind);
       var override = currentOverride(name);
-      if (override) learn(name, override);
-      addItem({ name: name, qty: p.qty, category: override || detectCategory(name), manual: true });
+      if (override) learn(name, override, kind);
+      addItem({ name: name, qty: p.qty, category: override || detectCategory(name, kind), manual: true });
       input.value = '';
       state.override = null;
       update();
@@ -1033,7 +1142,7 @@
       var on = findOnList(it.name);
       var active = on && !on.inCart ? on : null;
       var b = el('button', {
-        type: 'button', class: 'pick' + (active ? ' on' : ''), style: tint(catInfo(it.category)),
+        type: 'button', class: 'pick' + (active ? ' on' : ''), style: tint(catInfo(it.category, kind)),
         'aria-pressed': active ? 'true' : 'false', 'aria-label': it.name + (active && active.qty ? ', ' + active.qty : '')
       }, [
         el('span', { class: 'pick-check', 'aria-hidden': 'true', text: '✓' }),
@@ -1065,15 +1174,15 @@
             addItem({ name: it.name, qty: choice, category: it.category, manual: true });
           }
           after();
-        });
+        }, kind);
       });
       return b;
     }
 
     function renderMatches(p) {
       var q = norm(p.name);
-      var exact = norm(niceName(p.name));
-      var found = browseItems().filter(function (it) {
+      var exact = norm(niceName(p.name, kind));
+      var found = browseItems(kind).filter(function (it) {
         if (it.key === exact) return false;
         return it.aliases.some(function (a) { return a.indexOf(q) === 0 || a.indexOf(' ' + q) !== -1; });
       }).slice(0, 30);
@@ -1091,7 +1200,8 @@
       body.replaceChildren();
 
       if (state.tab === 'freq') {
-        var freq = Object.keys(data.counts).map(function (k) { return data.counts[k]; })
+        var counts = memory(kind).counts;
+        var freq = Object.keys(counts).map(function (k) { return counts[k]; })
           .sort(function (a, b) { return b.n - a.n || b.last - a.last; }).slice(0, 30);
         if (!freq.length) {
           body.append(el('div', { class: 'empty' }, [
@@ -1102,14 +1212,14 @@
           return;
         }
         body.append(label('Most added'), el('div', { class: 'picks' }, freq.map(function (c) {
-          var cat = hasCat(c.category) ? c.category : detectCategory(c.name);
-          return pickTile({ name: c.name, icon: iconFor(c.name, cat), category: cat }, '', '×' + c.n);
+          var cat = hasCat(c.category, kind) ? c.category : detectCategory(c.name, kind);
+          return pickTile({ name: c.name, icon: iconFor(c.name, cat, kind), category: cat }, '', '×' + c.n);
         })));
         return;
       }
 
-      var items = browseItems();
-      allCats().forEach(function (c) {
+      var items = browseItems(kind);
+      allCats(kind).forEach(function (c) {
         var group = items.filter(function (i) { return i.category === c.name; });
         group.sort(function (a, b) { return (b.mine ? 1 : 0) - (a.mine ? 1 : 0); });
         if (!group.length) return;
@@ -1133,13 +1243,14 @@
     'Veggies': ['1x', '2x', '3x', '500g', '1kg', '1 bunch'],
     'Fruits': ['1x', '2x', '4x', '6x', '500g', '1kg'],
     'Pantry': ['1x', '2x', '3x', '250g', '500g', '1kg'],
-    'Drinks': ['1x', '2x', '6x', '1l', '1.5l', '2l']
+    'Drinks': ['1x', '2x', '6x', '1l', '1.5l', '2l'],
+    'Clothes': ['1x', '2x', '3x', '4x', '5x', '7x']
   };
   var DEFAULT_PRESETS = ['1x', '2x', '3x', '4x', '5x', '6x'];
 
   // done(amount) — '' means no amount, null means remove from the list
-  function openQtyPicker(it, active, done) {
-    var ci = catInfo(it.category);
+  function openQtyPicker(it, active, done, kind) {
+    var ci = catInfo(it.category, kind);
     var sheet = openSheet({ title: it.name + ' ' + it.icon });
     var finished = false;
     function finish(v) {
@@ -1177,11 +1288,14 @@
   }
 
   // ---------- Category picker ----------
-  function openCategoryPicker(current, onPick) {
+  function askCategoryName(kind) {
+    return addCustomCategory(prompt('Name your new category (' + WORDS[kind].newCat + '):'), kind);
+  }
+  function openCategoryPicker(current, onPick, kind) {
     var sheet = openSheet({ title: 'Choose category' });
     function draw() {
       sheet.body.replaceChildren(el('div', { class: 'cat-grid' },
-        allCats().map(function (c) {
+        allCats(kind).map(function (c) {
           return el('button', {
             type: 'button', class: 'cat-option' + (c.name === current ? ' selected' : ''), style: tint(c),
             onclick: function () { onPick(c.name); closeSheet(sheet); }
@@ -1189,7 +1303,7 @@
         }).concat([el('button', {
           type: 'button', class: 'cat-option new',
           onclick: function () {
-            var name = addCustomCategory(prompt('Name your new category (e.g. Travel):'));
+            var name = askCategoryName(kind);
             if (name) { onPick(name); closeSheet(sheet); }
           }
         }, [el('span', { class: 'cat-option-icon', text: '＋' }), el('span', { text: 'New category' })])])
@@ -1204,6 +1318,7 @@
     if (!item) return;
     write(TIP_KEY, true);
     var list = currentList();
+    var kind = kindOf(list);
     var sheet = openSheet({ title: 'Edit item', onClose: renderMain });
 
     var heroIcon = el('span', { class: 'hero-icon' });
@@ -1216,12 +1331,12 @@
 
     function persist() { save(); }
     function drawHero() {
-      var ci = catInfo(item.category);
+      var ci = catInfo(item.category, kind);
       hero.setAttribute('style', tint(ci));
-      heroIcon.textContent = iconFor(item.name, item.category);
+      heroIcon.textContent = iconFor(item.name, item.category, kind);
     }
     function drawQty() {
-      qtyChips.replaceChildren.apply(qtyChips, QUICK_QTY.map(function (q) {
+      qtyChips.replaceChildren.apply(qtyChips, (kind === 'travel' ? QUICK_QTY_TRAVEL : QUICK_QTY).map(function (q) {
         return el('button', {
           type: 'button', class: 'mini-chip' + (item.qty === q ? ' selected' : ''), text: q,
           onclick: function () { item.qty = item.qty === q ? '' : q; qtyInput.value = item.qty; persist(); drawQty(); }
@@ -1229,13 +1344,13 @@
       }));
     }
     function drawCats() {
-      catChips.replaceChildren.apply(catChips, allCats().map(function (c) {
+      catChips.replaceChildren.apply(catChips, allCats(kind).map(function (c) {
         return el('button', {
           type: 'button', class: 'cat-option' + (c.name === item.category ? ' selected' : ''), style: tint(c),
           onclick: function () {
             if (item.category === c.name) return;
             item.category = c.name;
-            learn(item.name, c.name);
+            learn(item.name, c.name, kind);
             persist(); drawCats(); drawHero();
             toast('Got it: ' + item.name + ' goes in ' + c.name + ' from now on');
           }
@@ -1243,9 +1358,9 @@
       }).concat([el('button', {
         type: 'button', class: 'cat-option new',
         onclick: function () {
-          var name = addCustomCategory(prompt('Name your new category (e.g. Travel):'));
+          var name = askCategoryName(kind);
           if (!name) return;
-          item.category = name; learn(item.name, name); persist(); drawCats(); drawHero();
+          item.category = name; learn(item.name, name, kind); persist(); drawCats(); drawHero();
         }
       }, [el('span', { class: 'cat-option-icon', text: '＋' }), el('span', { text: 'New' })])]));
     }
@@ -1272,8 +1387,8 @@
       hero,
       label('Quantity'), qtyInput, qtyChips,
       label('Category'), catChips,
-      list.type !== 'recipe' ? label('Store') : null,
-      list.type !== 'recipe' ? storeChips : null,
+      usesStores(list) ? label('Store') : null,
+      usesStores(list) ? storeChips : null,
       el('button', {
         type: 'button', class: 'danger-btn', text: 'Delete item',
         onclick: function () { closeSheet(sheet); removeItems([item.id], 'Deleted ' + item.name); }
@@ -1296,8 +1411,10 @@
       el('div', { class: 'menu-group' }, [
         row('📥', 'Import a recipe', function () { openImport(); }),
         row('📝', 'New list', newList),
-        list.id !== 'main' ? row('🛒', 'Add all to Groceries', addAllToMain) : null,
-        list.id !== 'main' ? row('✏️', 'Rename list', renameList) : null
+        list.id !== 'main' && kindOf(list) === 'grocery' ? row('🛒', 'Add all to Groceries', addAllToMain) : null,
+        list.id !== 'main' ? row('✏️', 'Rename list', renameList) : null,
+        list.type === 'custom' ? row('🧳', 'Make it a packing list', function () { changeKind('travel'); }) : null,
+        list.type === 'travel' ? row('📝', 'Make it a shopping list', function () { changeKind('grocery'); }) : null
       ]),
       el('div', { class: 'menu-group' }, [
         row('🏷️', 'My categories', openCategories),
@@ -1307,13 +1424,54 @@
     );
   }
 
+  var LIST_KINDS = [
+    { kind: 'grocery', name: 'Shopping', icon: '🛒', h: 120, s: '45%' },
+    { kind: 'travel', name: 'Packing for a trip', icon: '🧳', h: 215, s: '60%' }
+  ];
   function newList() {
-    var name = cap(prompt('Name your new list (e.g. Travel, Party):') || '');
-    if (!name) return;
-    var id = uid();
-    data.lists.push({ id: id, name: name.slice(0, 40), type: 'custom', createdAt: Date.now() });
+    var kind = 'grocery', picked = false;
+    var sheet = openSheet({ title: 'New list' });
+    var input = el('input', { class: 'input', type: 'text', placeholder: 'e.g. Trip to Rome, Party', 'aria-label': 'List name', maxlength: '40', enterkeyhint: 'done' });
+    var kinds = el('div', { class: 'cat-grid' });
+    function draw() {
+      kinds.replaceChildren.apply(kinds, LIST_KINDS.map(function (k) {
+        var on = k.kind === kind;
+        return el('button', {
+          type: 'button', class: 'cat-option' + (on ? ' selected' : ''), style: tint(k), 'aria-pressed': on ? 'true' : 'false',
+          onclick: function () { kind = k.kind; picked = true; draw(); }
+        }, [el('span', { class: 'cat-option-icon', text: k.icon }), el('span', { text: k.name })]);
+      }));
+    }
+    function create() {
+      var name = cap(input.value);
+      if (!name) { input.focus(); return; }
+      var id = uid();
+      data.lists.push({ id: id, name: name.slice(0, 40), type: kind === 'travel' ? 'travel' : 'custom', createdAt: Date.now() });
+      save();
+      closeSheet(sheet);
+      switchList(id);
+    }
+    // "Trip to Rome", "Wakacje"… picks packing for you, until you choose yourself.
+    input.addEventListener('input', function () {
+      if (picked) return;
+      kind = looksLikeTrip(input.value) ? 'travel' : 'grocery';
+      draw();
+    });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); create(); } });
+    sheet.body.append(
+      label('Name'), input,
+      label('What is it for?'), kinds,
+      el('button', { type: 'button', class: 'primary-btn wide', text: 'Create list', onclick: create })
+    );
+    draw();
+    input.focus();
+  }
+  function changeKind(kind) {
+    var list = currentList();
+    setKind(list, kind);
     save();
-    switchList(id);
+    renderMain();
+    toast(kind === 'travel' ? '🧳 ' + list.name + ' is now a packing list' : '📝 ' + list.name + ' is now a shopping list');
   }
   function renameList() {
     var list = currentList();
@@ -1372,28 +1530,32 @@
     );
   }
   function resetFrequent() {
-    if (!confirm('Forget how often you added each item?')) return;
-    data.counts = {};
+    var travel = kindOf(currentList()) === 'travel';
+    if (!confirm(travel ? 'Forget how often you packed each item?' : 'Forget how often you added each item?')) return;
+    memory(travel ? 'travel' : 'grocery').counts = {};
     save();
     toast('Frequent items reset');
   }
 
+  // Shopping lists and packing lists each have their own categories.
   function openCategories() {
-    var sheet = openSheet({ title: 'My categories' });
-    var input = el('input', { class: 'input', type: 'text', placeholder: 'e.g. Travel', 'aria-label': 'New category name', maxlength: '30', enterkeyhint: 'done' });
+    var kind = kindOf(currentList());
+    var sheet = openSheet({ title: kind === 'travel' ? 'My packing categories' : 'My categories' });
+    var input = el('input', { class: 'input', type: 'text', placeholder: WORDS[kind].newCat, 'aria-label': 'New category name', maxlength: '30', enterkeyhint: 'done' });
     var listEl = el('div', { class: 'chip-row' });
     function draw() {
+      var mine = memory(kind).customCats;
       listEl.replaceChildren();
-      if (!data.customCats.length) listEl.append(el('p', { class: 'hint', text: 'You haven’t made any yet.' }));
-      data.customCats.forEach(function (n) {
+      if (!mine.length) listEl.append(el('p', { class: 'hint', text: 'You haven’t made any yet.' }));
+      mine.forEach(function (n) {
         listEl.append(el('span', { class: 'mini-chip removable' }, [
           CUSTOM_STYLE.icon + ' ' + n,
-          el('button', { type: 'button', text: '✕', 'aria-label': 'Remove ' + n, onclick: function () { if (removeCustomCategory(n)) draw(); } })
+          el('button', { type: 'button', text: '✕', 'aria-label': 'Remove ' + n, onclick: function () { if (removeCustomCategory(n, kind)) draw(); } })
         ]));
       });
     }
     function add() {
-      var name = addCustomCategory(input.value);
+      var name = addCustomCategory(input.value, kind);
       if (!name) return;
       input.value = '';
       draw();
@@ -1401,7 +1563,7 @@
     }
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } });
     sheet.body.append(
-      el('p', { class: 'hint', text: 'Make your own categories, like Travel for passport, charger and iPad.' }),
+      el('p', { class: 'hint', text: WORDS[kind].catHint }),
       el('div', { class: 'inline-form' }, [input, el('button', { type: 'button', class: 'primary-btn', text: 'Add', onclick: add })]),
       label('Your categories'), listEl
     );

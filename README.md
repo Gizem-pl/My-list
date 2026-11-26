@@ -9,7 +9,8 @@ A grocery shopping app made with plain HTML, CSS and JavaScript. Everything is s
 - **My frequent:** inside **＋ Add item**, the **⭐ My frequent** tab shows what you add most often.
 - **Shopping:** tap an item to put it in **In Cart**. Tap it there to put it back on the list. **Clear Cart** empties the cart, and you can undo it.
 - **Stores:** filter by Biedronka, Carrefour, Rossmann, Hebe or Auchan. Press and hold an item to tag it with a store. Items with "Any store" show up under every store.
-- **Lists:** tap **＋ List** for extra lists, like Travel. Your own categories are under ••• → **My categories**.
+- **Lists:** tap **＋ List** for extra lists, and choose **Shopping** or **Packing for a trip**. Your own categories are under ••• → **My categories**.
+- **Packing lists:** a trip list has its own categories (Documents, Clothes, Toiletries, Electronics, Beach & sun, Travel gear, Before you go) and ready-made travel items, with no store tabs. Tap an item to mark it **Packed**. **Unpack All** puts everything back on the list for your next trip. A list named like "Trip to Rome" or "Wakacje" picks packing for you. To switch an existing list, use ••• → **Make it a packing list** (or **Make it a shopping list**).
 - **Recipes:** copy a whole recipe from any website or app, then tap ••• → **Import a recipe** → **Paste from clipboard**. Only the ingredients are kept, with clean names and amounts. You can rename the dish or remove lines before importing, and each dish becomes its own list. See [SHARING.md](SHARING.md) for how the cooking apps send recipes.
 
 ## Try it on your computer
@@ -42,7 +43,7 @@ When you change any app file, also raise the version in `sw.js` (for example `gr
 
 - `index.html`: the page
 - `style.css`: the look
-- `catalog.js`: categories and the ready-made items
+- `catalog.js`: categories and the ready-made items (groceries and travel)
 - `app.js`: everything the app does
 - `sw.js`: offline support
 - `manifest.json`, `icon-*.png`, `icon.svg`: app name and icons for the Home Screen

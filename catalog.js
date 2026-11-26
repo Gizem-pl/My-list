@@ -479,3 +479,138 @@ window.GROCERY_CATALOG = {
     '🎁|Gift|present,prezent'
   ]
 };
+
+// Travel lists use their own categories and ready-made items (a packing list,
+// not a shopping list). Same "icon|Name|other names" format as above.
+window.TRAVEL_CATEGORIES = [
+  { name: 'Documents', icon: '🛂', h: 215, s: '60%' },
+  { name: 'Clothes', icon: '👕', h: 285, s: '50%' },
+  { name: 'Toiletries', icon: '🧴', h: 320, s: '50%' },
+  { name: 'Health', icon: '💊', h: 8, s: '70%' },
+  { name: 'Electronics', icon: '🔌', h: 190, s: '60%' },
+  { name: 'Beach & sun', icon: '☀️', h: 45, s: '85%' },
+  { name: 'Travel gear', icon: '🎒', h: 28, s: '65%' },
+  { name: 'Before you go', icon: '🏠', h: 120, s: '40%' },
+  { name: 'Other', icon: '🧳', h: 220, s: '12%' }
+];
+
+window.TRAVEL_CATALOG = {
+  'Documents': [
+    '🛂|Passport|passports,paszport,paszporty',
+    '🪪|ID card|id,id cards,identity card,dowod,dowod osobisty',
+    '🎫|Tickets|ticket,plane tickets,flight tickets,train tickets,boarding pass,boarding passes,bilet,bilety,karta pokladowa',
+    '🚗|Driving licence|driving license,driver license,drivers license,prawo jazdy',
+    '💳|Bank cards|bank card,credit card,debit card,cards,karta,karty,karta platnicza',
+    '💶|Cash|money,euro,euros,currency,gotowka,pieniadze',
+    '👛|Wallet|purse,portfel',
+    '🏨|Hotel booking|booking,bookings,reservation,hotel reservation,rezerwacja,rezerwacja hotelu',
+    '🛡️|Travel insurance|insurance,ubezpieczenie,ubezpieczenie podrozne',
+    '🏥|EHIC card|ehic,health insurance card,ekuz,karta ekuz',
+    '🔑|Keys|house keys,home keys,car keys,klucze,klucze do domu'
+  ],
+  'Clothes': [
+    '👕|T-shirts|t-shirt,tshirt,tshirts,tee,tees,top,tops,koszulka,koszulki',
+    '👔|Shirts|shirt,blouse,koszula,koszule,bluzka',
+    '👖|Trousers|pants,jeans,spodnie,dzinsy,jeansy',
+    '🩳|Shorts|szorty,spodenki,krotkie spodenki',
+    '👗|Dress|dresses,skirt,sukienka,sukienki,spodnica',
+    '🧶|Sweater|jumper,hoodie,sweatshirt,cardigan,sweter,bluza',
+    '🧥|Jacket|coat,raincoat,rain jacket,kurtka,plaszcz,kurtka przeciwdeszczowa',
+    '🩲|Underwear|boxers,briefs,knickers,bra,bielizna,majtki,biustonosz',
+    '🧦|Socks|sock,skarpetki,skarpety',
+    '😴|Pyjamas|pajamas,pyjama,pajama,pjs,pidzama,pizama',
+    '🩱|Swimsuit|bikini,swimwear,swimming costume,swim shorts,swimming trunks,stroj kapielowy,kostium kapielowy,kapielowki',
+    '🏃|Sportswear|gym clothes,workout clothes,leggings,stroj sportowy,legginsy',
+    '🧢|Hat|cap,sun hat,beanie,czapka,kapelusz',
+    '🧣|Scarf|szalik,chusta',
+    '🧤|Gloves|rekawiczki',
+    '👟|Trainers|sneakers,running shoes,buty sportowe,adidasy',
+    '👞|Shoes|buty,polbuty',
+    '🩴|Flip-flops|flip flops,sandals,slippers,klapki,sandaly,japonki',
+    '🥾|Hiking boots|boots,buty trekkingowe,buty gorskie'
+  ],
+  'Toiletries': [
+    '🪥|Toothbrush|toothbrushes,szczoteczka,szczoteczka do zebow',
+    '🦷|Toothpaste|pasta do zebow',
+    '🧵|Dental floss|floss,nic dentystyczna',
+    '🧴|Shampoo|szampon',
+    '🧴|Conditioner|odzywka,odzywka do wlosow',
+    '🧼|Shower gel|body wash,soap,zel pod prysznic,mydlo',
+    '🧴|Deodorant|deo,antiperspirant,dezodorant,antyperspirant',
+    '🧴|Moisturiser|moisturizer,face cream,body lotion,krem,krem do twarzy,balsam',
+    '🧴|Perfume|perfumy,woda toaletowa',
+    '💄|Makeup|make up,cosmetics,makeup remover,kosmetyki,makijaz,demakijaz',
+    '🪒|Razor|razors,shaver,maszynka,maszynka do golenia,golarka',
+    '🪮|Hairbrush|comb,brush,szczotka,grzebien,szczotka do wlosow',
+    '💨|Hair dryer|hairdryer,suszarka,suszarka do wlosow',
+    '✂️|Nail clippers|nail scissors,nail file,obcinacz do paznokci,cazki,pilnik',
+    '👁️|Contact lenses|contacts,lenses,lens solution,soczewki,plyn do soczewek',
+    '🩸|Pads|tampons,sanitary pads,menstrual cup,podpaski,tampony',
+    '🤧|Tissues|chusteczki',
+    '👝|Toiletry bag|wash bag,washbag,kosmetyczka'
+  ],
+  'Health': [
+    '💊|Medicines|medicine,medication,meds,pills,prescription,leki,lekarstwa',
+    '💊|Painkillers|ibuprofen,paracetamol,aspirin,tabletki przeciwbolowe,ibuprom,apap',
+    '🩹|First aid kit|plasters,band aids,bandaids,plastry,apteczka',
+    '🤢|Travel sickness pills|motion sickness tablets,aviomarin,choroba lokomocyjna',
+    '🦟|Insect repellent|mosquito spray,bug spray,mosquito repellent,spray na komary,odstraszacz komarow,mugga',
+    '🧴|Hand sanitiser|hand sanitizer,sanitiser,sanitizer,zel antybakteryjny,plyn do dezynfekcji',
+    '😷|Face masks|face mask,mask,masks,maseczka,maseczki',
+    '👓|Glasses|spectacles,glasses case,okulary,okulary korekcyjne'
+  ],
+  'Electronics': [
+    '📱|Phone|mobile,smartphone,iphone,telefon',
+    '🔌|Phone charger|charger,chargers,charging cable,cable,cables,usb cable,ladowarka,ladowarki,kabel,ladowarka do telefonu',
+    '🔋|Power bank|powerbank,battery pack,external battery',
+    '🔌|Travel adapter|adapter,adapters,plug adapter,power adapter,przejsciowka,adapter do gniazdka',
+    '🎧|Headphones|earphones,earbuds,airpods,sluchawki',
+    '💻|Laptop|computer,macbook,komputer',
+    '🔌|Laptop charger|computer charger,ladowarka do laptopa',
+    '📱|iPad|tablet,ipad charger',
+    '⌚|Watch|smartwatch,apple watch,zegarek',
+    '📷|Camera|gopro,aparat,aparat fotograficzny',
+    '📖|E-reader|kindle,ebook reader,czytnik,czytnik ebookow'
+  ],
+  'Beach & sun': [
+    '🧴|Sunscreen|sun cream,suncream,sun lotion,spf,krem z filtrem,krem do opalania,filtr',
+    '🧴|After sun|aftersun,after-sun,balsam po opalaniu,po opalaniu',
+    '🕶️|Sunglasses|sun glasses,okulary przeciwsloneczne',
+    '🏖️|Beach towel|towel,towels,recznik,reczniki,recznik plazowy',
+    '👜|Beach bag|torba plazowa',
+    '🥽|Swimming goggles|goggles,okularki,okularki do plywania',
+    '🤿|Snorkel|snorkel mask,diving mask,maska do nurkowania,fajka'
+  ],
+  'Travel gear': [
+    '🧳|Suitcase|luggage,carry on,hand luggage,walizka,bagaz,bagaz podreczny',
+    '🎒|Backpack|rucksack,daypack,plecak',
+    '😴|Neck pillow|travel pillow,pillow,poduszka,poduszka podrozna',
+    '😴|Eye mask|sleep mask,opaska na oczy',
+    '👂|Earplugs|ear plugs,zatyczki,zatyczki do uszu,stopery',
+    '📚|Book|books,ksiazka,ksiazki',
+    '💧|Water bottle|bottle,water,butelka,butelka na wode,bidon',
+    '🍫|Snacks for the trip|snacks,snack,przekaski',
+    '☂️|Umbrella|parasol,parasolka',
+    '🔒|Luggage lock|padlock,lock,klodka',
+    '🏷️|Luggage tag|bag tag,zawieszka',
+    '🗺️|Guidebook|map,maps,przewodnik,mapa',
+    '🧺|Laundry bag|worek na pranie',
+    '🛍️|Tote bag|shopping bag,foldable bag,torba,torba na zakupy'
+  ],
+  'Before you go': [
+    '✅|Check in online|online check in,check-in,check in,odprawa,odprawa online',
+    '🌱|Water the plants|plants,water plants,podlac kwiaty,podlej kwiaty,kwiaty',
+    '🗑️|Take out the trash|trash,rubbish,bins,take out the bins,wyniesc smieci,smieci',
+    '🧊|Empty the fridge|fridge,oproznic lodowke,lodowka',
+    '🔌|Unplug appliances|unplug,unplug everything,wylaczyc z pradu,odlaczyc urzadzenia',
+    '🔥|Turn off the heating|heating,turn off the gas,gas,wylaczyc ogrzewanie,ogrzewanie,gaz',
+    '🚰|Turn off the water|turn off water,zakrecic wode',
+    '🪟|Close the windows|windows,close windows,zamknac okna,okna',
+    '🔐|Lock the door|lock door,lock the house,zamknac drzwi',
+    '🐾|Pet sitter|pet care,feed the cat,feed the dog,opieka nad zwierzakiem,karmienie kota'
+  ],
+  'Other': [
+    '🎁|Gifts|gift,present,presents,prezent,prezenty',
+    '🃏|Cards & games|cards game,board game,games,gry,karty do gry'
+  ]
+};
